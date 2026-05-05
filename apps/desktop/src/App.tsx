@@ -57,6 +57,34 @@ export function App() {
               <span>I have the right to convert this book</span>
             </label>
           </article>
+          <article className="review-panel">
+            <h3>Review</h3>
+            <p>Low-confidence speakers and voices can be corrected globally before regeneration.</p>
+            <label>
+              <span>Character alias</span>
+              <input aria-label="Character alias" placeholder="Lizzy = Elizabeth" />
+            </label>
+            <label>
+              <span>Character gender</span>
+              <select aria-label="Character gender" defaultValue="unknown">
+                <option value="unknown">Unknown</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </label>
+            <label>
+              <span>Assigned voice</span>
+              <select aria-label="Assigned voice" defaultValue="neutral_dialogue_01">
+                <option value="neutral_dialogue_01">Neutral Dialogue 01</option>
+                <option value="female_adult_01">Female Adult 01</option>
+                <option value="male_adult_01">Male Adult 01</option>
+              </select>
+            </label>
+            <button className="secondary-action" type="button">
+              Regenerate Affected Chapters
+            </button>
+          </article>
           <article>
             <h3>Export</h3>
             <p>Completed chapter audio and metadata exports will be available after generation.</p>

@@ -143,6 +143,24 @@ article p {
   line-height: 1.5;
 }
 
+article label {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  color: #435160;
+  font-size: 13px;
+}
+
+article input,
+article select {
+  min-height: 34px;
+  border: 1px solid #cfd7e2;
+  border-radius: 6px;
+  padding: 0 9px;
+  color: #17202a;
+  background: #ffffff;
+}
+
 .attestation {
   display: flex;
   align-items: flex-start;
@@ -150,6 +168,17 @@ article p {
   margin-top: 16px;
   color: #25313d;
   line-height: 1.35;
+}
+
+.secondary-action {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 14px;
+  border: 1px solid #16625f;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #16625f;
+  cursor: pointer;
 }
 
 @media (max-width: 760px) {
