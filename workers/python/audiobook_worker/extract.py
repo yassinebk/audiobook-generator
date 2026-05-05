@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import ebooklib
+import fitz
+from bs4 import BeautifulSoup
+from ebooklib import epub
+
+from audiobook_worker.ocr import classify_pdf_text_layer
+
+
+@dataclass(frozen=True)
+class ExtractedBookText:
+    kind: str
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    requires_ocr: bool = False
+    warnings: list[str] = field(default_factory=list)
+
+
+def extract_book_text(input_path: Path | str) -> ExtractedBookText:
+    path = Path(input_path)
+    suffix = path.suffix.lower()
+    if suffix == ".epub":
+        return _extract_epub(path)
+    if suffix == ".pdf":
+        return _extract_pdf(path)
+    raise ValueError(f"Unsupported book format: {suffix}")
+
+
+def _extract_epub(path: Path) -> ExtractedBookText:
+    book = epub.read_epub(str(path))
+    chunks: list[str] = []
+    for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        soup = BeautifulSoup(item.get_content(), "html.parser")
+        text = soup.get_text(separator="\n")
+        normalized = _normalize_text(text)
+        if normalized:
+            chunks.append(normalized)
+
+    title_values = book.get_metadata("DC", "title")
+    language_values = book.get_metadata("DC", "language")
+    metadata: dict[str, Any] = {}
+    if title_values:
+        metadata["title"] = title_values[0][0]
+    if language_values:
+        metadata["language"] = language_values[0][0]
+
+    return ExtractedBookText(
+        kind="epub",
+        text="\n\n".join(chunks),
+        metadata=metadata,
+        requires_ocr=False,
+    )
+
+
+def _extract_pdf(path: Path) -> ExtractedBookText:
+    text_layer = classify_pdf_text_layer(path)
+    document = fitz.open(path)
+    page_texts: list[str] = []
+    try:
+        for page in document:
+            page_texts.append(page.get_text("text"))
+        metadata = {
+            "page_count": document.page_count,
+            **{key: value for key, value in document.metadata.items() if value},
+        }
+    finally:
+        document.close()
+
+    text = _normalize_text("\n\n".join(page_texts))
+    return ExtractedBookText(
+        kind="pdf",
+        text=text,
+        metadata={**metadata, "text_layer": text_layer},
+        requires_ocr=text_layer in {"scanned", "mixed"},
+        warnings=["requires_ocr"] if text_layer in {"scanned", "mixed"} else [],
+    )
+
+
+def _normalize_text(text: str) -> str:
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    paragraphs: list[str] = []
+    for line in lines:
+        if line:
+            paragraphs.append(line)
+    return "\n".join(paragraphs)
