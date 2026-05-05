@@ -2,6 +2,7 @@
   "name": "audiobook-generator",
   "private": true,
   "workspaces": [
+    "apps/*",
     "packages/*"
   ],
   "scripts": {

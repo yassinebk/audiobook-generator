@@ -3,3 +3,6 @@ node_modules/
 .venv/
 __pycache__/
 *.pyc
+dist/
+target/
+apps/desktop/src-tauri/gen/
