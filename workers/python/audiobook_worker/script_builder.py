@@ -140,6 +140,61 @@ def build_chapter_script(
     }
 
 
+def build_chapter_script_with_corrections(
+    *,
+    book_id: str,
+    chapter_id: str,
+    title: str,
+    text: str,
+    language: str,
+    corrections: dict,
+    analyzer=None,
+) -> dict:
+    alias_map: dict[str, str] = {}
+    for merge in corrections.get("aliasMerges", []):
+        alias_map[merge["from"].lower()] = merge["to"]
+
+    if alias_map:
+        import re
+        for alias, canonical in alias_map.items():
+            pattern = re.compile(re.escape(alias), re.IGNORECASE)
+            text = pattern.sub(canonical, text)
+
+    gender_overrides: dict[str, str] = {}
+    for override in corrections.get("genderOverrides", []):
+        gender_overrides[override["characterId"]] = override["gender"]
+
+    voice_overrides: dict[str, str] = {}
+    for override in corrections.get("voiceOverrides", []):
+        voice_overrides[override["characterId"]] = override["voiceId"]
+
+    script = build_chapter_script(
+        book_id=book_id,
+        chapter_id=chapter_id,
+        title=title,
+        text=text,
+        language=language,
+        analyzer=analyzer,
+    )
+
+    for character in script["characters"]:
+        char_id = character["id"]
+        if char_id in gender_overrides:
+            character["gender"] = gender_overrides[char_id]
+            character["voiceId"] = _voice_for_gender(gender_overrides[char_id])
+        if char_id in voice_overrides:
+            character["voiceId"] = voice_overrides[char_id]
+
+    for segment in script["segments"]:
+        speaker_id = segment["speakerId"]
+        if speaker_id in voice_overrides:
+            segment["voiceId"] = voice_overrides[speaker_id]
+        elif speaker_id in gender_overrides:
+            segment["voiceId"] = _voice_for_gender(gender_overrides[speaker_id])
+
+    return script
+
+
 def _character_to_script(character) -> dict:
     voice_id = _voice_for_gender(character.gender)
     return {

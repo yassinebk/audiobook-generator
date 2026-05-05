@@ -6,8 +6,12 @@ from typing import Literal
 
 
 QUOTE_RE = re.compile(r'"([^"]+)"')
+SPEECH_VERBS = r"said|asked|replied|whispered|shouted|answered|called"
 TRAILING_SPEECH_TAG_RE = re.compile(
-    r"^\s*,?\s*(?P<speaker>[A-Z][A-Za-z.'-]*)\s+(?:said|asked|replied|whispered|shouted|answered)\b"
+    rf"^\s*,?\s*(?P<speaker>[A-Z][A-Za-z.'-]*)\s+(?:{SPEECH_VERBS})\b"
+)
+TRAILING_SPEECH_TAG_INVERTED_RE = re.compile(
+    rf"^\s*,?\s*(?:{SPEECH_VERBS})\s+(?P<speaker>[A-Z][A-Za-z.'-]*)"
 )
 
 SegmentType = Literal["narration", "dialogue"]
@@ -77,6 +81,8 @@ def segment_dialogue(text: str) -> list[DialogueSegment]:
 
 def _infer_trailing_speaker(text_after_quote: str) -> str | None:
     match = TRAILING_SPEECH_TAG_RE.match(text_after_quote)
+    if match is None:
+        match = TRAILING_SPEECH_TAG_INVERTED_RE.match(text_after_quote)
     if match is None:
         return None
     return match.group("speaker")
