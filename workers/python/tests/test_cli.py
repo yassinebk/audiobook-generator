@@ -102,7 +102,6 @@ def test_synthesize_segment_audio_uses_parler_backend(tmp_path: Path):
 
 def test_apply_corrections_command(tmp_path: Path):
     from audiobook_worker.cli import main
-    import os
 
     chapter_path = tmp_path / "ch01.txt"
     chapter_path.write_text('"Hello," said Lizzy. "Hi," Elizabeth replied.', encoding="utf-8")
