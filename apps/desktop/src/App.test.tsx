@@ -11,6 +11,8 @@ describe("App", () => {
     expect(screen.getByText("Job Progress")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Characters" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Chapters" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rights" })).toBeInTheDocument();
+    expect(screen.getByLabelText("I have the right to convert this book")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Export" })).toBeInTheDocument();
   });
 });

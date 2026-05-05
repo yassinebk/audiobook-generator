@@ -50,6 +50,14 @@ export function App() {
             <p>Chapter scripts and generation state will be listed as the worker pipeline runs.</p>
           </article>
           <article>
+            <h3>Rights</h3>
+            <p>Unknown or restricted license status will require confirmation before generation.</p>
+            <label className="attestation">
+              <input type="checkbox" />
+              <span>I have the right to convert this book</span>
+            </label>
+          </article>
+          <article>
             <h3>Export</h3>
             <p>Completed chapter audio and metadata exports will be available after generation.</p>
           </article>
