@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,4 +98,45 @@ def test_synthesize_segment_audio_uses_parler_backend(tmp_path: Path):
     assert result["status"] == "succeeded"
     # Verify Parler model was actually loaded, not the mock backend
     mock_cls.from_pretrained.assert_called_once()
+
+
+def test_apply_corrections_command(tmp_path: Path):
+    from audiobook_worker.cli import main
+    import os
+
+    chapter_path = tmp_path / "ch01.txt"
+    chapter_path.write_text('"Hello," said Lizzy. "Hi," Elizabeth replied.', encoding="utf-8")
+    output_dir = tmp_path / "scripts"
+    output_dir.mkdir()
+
+    request = {
+        "bookId": "book1",
+        "chapters": [
+            {"chapterId": "ch01", "textPath": str(chapter_path), "title": "Chapter 1"}
+        ],
+        "corrections": {
+            "aliasMerges": [{"from": "Lizzy", "to": "Elizabeth"}],
+            "genderOverrides": [{"characterId": "elizabeth", "gender": "female"}],
+            "voiceOverrides": [],
+        },
+        "outputDirectory": str(output_dir),
+        "language": "en",
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(request), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    with patch.dict(os.environ, {"AUDIOBOOK_LLM_MODEL": "mock"}):
+        exit_code = main(["apply_corrections", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result["status"] == "succeeded"
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["kind"] == "chapter_script"
+
+    # verify alias merge was applied
+    script = json.loads(Path(result["artifacts"][0]["path"]).read_text())
+    speakers = {seg["speakerId"] for seg in script["segments"] if seg["type"] == "dialogue"}
+    assert speakers == {"elizabeth"}
 

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from audiobook_worker.audio import assemble_chapter_audio
-from audiobook_worker.llm import default_analyzer
-from audiobook_worker.script_builder import build_chapter_script
+from audiobook_worker.llm import MockLLMAnalyzer, default_analyzer
+from audiobook_worker.script_builder import build_chapter_script, build_chapter_script_with_corrections
 from audiobook_worker.tts import MockTTSBackend, ParlerTTSBackend
 
 
@@ -78,18 +78,72 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
+    if command == "extract_book":
+        return _extract_book(request)
     if command == "analyze_chapter":
         return _analyze_chapter(request)
     if command == "synthesize_segment_audio":
         return _synthesize_segment_audio(request)
     if command == "assemble_chapter_audio":
         return _assemble_chapter_audio(request)
+    if command == "apply_corrections":
+        return _apply_corrections(request)
     return _response(
         "failed",
         error={
             "code": "unknown_command",
             "message": f"Unknown worker command: {command}",
         },
+    )
+
+
+def _extract_book(request: dict[str, Any]) -> dict[str, Any]:
+    from audiobook_worker.chapters import detect_chapters
+    from audiobook_worker.extract import extract_book_text
+    from ebooklib import epub as epublib
+
+    book_path = Path(request["bookPath"])
+    title = book_path.stem
+    if book_path.suffix.lower() == ".epub":
+        try:
+            book = epublib.read_epub(str(book_path))
+            title_meta = book.get_metadata("DC", "title")
+            if title_meta:
+                title = title_meta[0][0]
+        except Exception:
+            pass
+
+    result = extract_book_text(book_path)
+    chapters = detect_chapters(result.text)
+
+    output_dir = Path(request["outputDirectory"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for chapter in chapters:
+        (output_dir / f"{chapter.id}.txt").write_text(chapter.text, encoding="utf-8")
+
+    return _response(
+        "succeeded",
+        warnings=result.warnings,
+        artifacts=[
+            {
+                "kind": "book_extraction",
+                "path": str(output_dir),
+                "metadata": {
+                    "title": title,
+                    "chapterCount": len(chapters),
+                    "chapters": [
+                        {
+                            "id": c.id,
+                            "title": c.title,
+                            "textLength": len(c.text),
+                            "textPath": str(output_dir / f"{c.id}.txt"),
+                        }
+                        for c in chapters
+                    ],
+                    "requiresOcr": result.requires_ocr,
+                },
+            }
+        ],
     )
 
 
@@ -103,7 +157,7 @@ def _analyze_chapter(request: dict[str, Any]) -> dict[str, Any]:
         title=request.get("title", request["chapterId"]),
         text=chapter_text,
         language=request.get("language", "en"),
-        analyzer=default_analyzer(),
+        analyzer=MockLLMAnalyzer() if request.get("mockLlm") else default_analyzer(),
     )
     script_path = output_directory / f"{request['chapterId']}.json"
     _write_json(script_path, script)
@@ -149,6 +203,37 @@ def _assemble_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
             }
         ],
     )
+
+
+def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
+    output_directory = Path(request["outputDirectory"])
+    output_directory.mkdir(parents=True, exist_ok=True)
+    corrections = request.get("corrections", {})
+
+    artifacts = []
+    for chapter in request["chapters"]:
+        chapter_text = Path(chapter["textPath"]).read_text(encoding="utf-8")
+        script = build_chapter_script_with_corrections(
+            book_id=request["bookId"],
+            chapter_id=chapter["chapterId"],
+            title=chapter.get("title", chapter["chapterId"]),
+            text=chapter_text,
+            language=request.get("language", "en"),
+            corrections=corrections,
+        )
+        script_path = output_directory / f"{chapter['chapterId']}.json"
+        _write_json(script_path, script)
+        artifacts.append({
+            "kind": "chapter_script",
+            "path": str(script_path),
+            "metadata": {
+                "chapterId": chapter["chapterId"],
+                "characterCount": len(script.get("characters", [])),
+                "segmentCount": len(script.get("segments", [])),
+            },
+        })
+
+    return _response("succeeded", artifacts=artifacts)
 
 
 if __name__ == "__main__":
