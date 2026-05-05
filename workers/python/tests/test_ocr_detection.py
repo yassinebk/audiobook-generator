@@ -31,7 +31,6 @@ def test_blank_pdf_is_classified_as_scanned(tmp_path: Path):
 
     assert classification == "scanned"
     assert extracted.requires_ocr is True
-    assert "requires_ocr" in extracted.warnings
 
 
 def test_mixed_pdf_is_classified_as_mixed(tmp_path: Path):
@@ -41,15 +40,15 @@ def test_mixed_pdf_is_classified_as_mixed(tmp_path: Path):
     assert classify_pdf_text_layer(input_path) == "mixed"
 
 
-def test_placeholder_ocr_backend_returns_clear_error(tmp_path: Path):
-    input_path = tmp_path / "blank.pdf"
-    write_blank_pdf(input_path)
+def test_run_ocr_returns_text_from_rendered_page(tmp_path: Path):
+    """OCR extracts text from a rendered PDF page."""
+    doc = fitz.open()
+    page = doc.new_page(width=200, height=100)
+    page.insert_text(fitz.Point(20, 50), "Hello World", fontsize=12)
+    pdf_path = tmp_path / "test.pdf"
+    doc.save(str(pdf_path))
+    doc.close()
 
-    try:
-        run_ocr(input_path)
-    except OCRBackendNotConfigured as error:
-        assert error.code == "ocr_backend_not_configured"
-        assert "OCR backend is not configured" in str(error)
-    else:
-        raise AssertionError("run_ocr should fail until an OCR backend is configured")
+    text = run_ocr(str(pdf_path))
+    assert "Hello" in text or "World" in text
 

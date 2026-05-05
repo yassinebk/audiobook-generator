@@ -31,7 +31,44 @@ def classify_pdf_text_layer(input_path: Path | str) -> PDFTextLayerClassificatio
 
 
 def run_ocr(input_path: Path | str) -> str:
-    raise OCRBackendNotConfigured(
-        f"OCR backend is not configured for {Path(input_path).name}"
-    )
+    path = Path(input_path)
+    if path.suffix.lower() != ".pdf":
+        raise ValueError(f"OCR only supports PDF files, got: {path.suffix}")
+
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+    except ImportError:
+        raise OCRBackendNotConfigured(
+            "pytesseract is not installed. Run: pip install pytesseract Pillow"
+        )
+
+    try:
+        pytesseract.get_tesseract_version()
+    except pytesseract.TesseractNotFoundError:
+        raise OCRBackendNotConfigured(
+            "Tesseract is not installed. Run: brew install tesseract"
+        )
+
+    document = fitz.open(path)
+    page_texts: list[str] = []
+
+    try:
+        for page in document:
+            pix = page.get_pixmap(dpi=150)
+            img = Image.open(io.BytesIO(pix.tobytes("png")))
+            text = pytesseract.image_to_string(img)
+            normalized = " ".join(text.split())
+            if normalized:
+                page_texts.append(normalized)
+    finally:
+        document.close()
+
+    if not page_texts:
+        raise OCRBackendNotConfigured(
+            f"No text could be extracted from {path.name}"
+        )
+
+    return "\n\n".join(page_texts)
 

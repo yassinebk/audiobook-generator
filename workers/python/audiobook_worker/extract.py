@@ -58,14 +58,47 @@ def _extract_epub(path: Path) -> ExtractedBookText:
 
 
 def _extract_pdf(path: Path) -> ExtractedBookText:
+    from audiobook_worker.ocr import run_ocr
+
     text_layer = classify_pdf_text_layer(path)
     document = fitz.open(path)
     page_texts: list[str] = []
+    ocr_warnings: list[str] = []
+    uses_ocr = False
     try:
-        for page in document:
-            page_texts.append(page.get_text("text"))
+        if text_layer == "scanned":
+            try:
+                text = run_ocr(path)
+                page_texts.append(text)
+                uses_ocr = True
+            except Exception as e:
+                return ExtractedBookText(
+                    kind="pdf",
+                    text="",
+                    metadata={
+                        "page_count": document.page_count,
+                        "text_layer": text_layer,
+                        **{key: value for key, value in document.metadata.items() if value},
+                    },
+                    requires_ocr=True,
+                    warnings=[f"OCR failed: {e}"],
+                )
+        elif text_layer == "mixed":
+            for page in document:
+                page_text = page.get_text("text").strip()
+                if page_text:
+                    page_texts.append(page_text)
+                else:
+                    ocr_warnings.append("mixed_page_required_ocr")
+            if ocr_warnings:
+                ocr_warnings.append("Consider re-running with full OCR for best results")
+        else:
+            for page in document:
+                page_texts.append(page.get_text("text"))
+
         metadata = {
             "page_count": document.page_count,
+            "text_layer": text_layer,
             **{key: value for key, value in document.metadata.items() if value},
         }
     finally:
@@ -75,9 +108,11 @@ def _extract_pdf(path: Path) -> ExtractedBookText:
     return ExtractedBookText(
         kind="pdf",
         text=text,
-        metadata={**metadata, "text_layer": text_layer},
+        metadata=metadata,
         requires_ocr=text_layer in {"scanned", "mixed"},
-        warnings=["requires_ocr"] if text_layer in {"scanned", "mixed"} else [],
+        warnings=ocr_warnings if ocr_warnings else (
+            ["requires_ocr"] if text_layer in {"scanned", "mixed"} and not uses_ocr else []
+        ),
     )
 
 
