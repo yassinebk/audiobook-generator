@@ -43,9 +43,10 @@ describe("CharacterTable", () => {
       />
     );
 
-    const rows = screen.getAllByRole("row");
-    const unknownRow = rows.find(row => row.textContent?.includes("35%"));
+    const unknownRow = screen.getByText("35%").closest("tr");
     expect(unknownRow).toBeTruthy();
+    expect(unknownRow!.className).toContain("low-confidence");
+    expect(screen.getByLabelText("Low confidence")).toBeInTheDocument();
   });
 
   test("calls onGenderChange when gender dropdown changes", () => {
@@ -80,5 +81,18 @@ describe("CharacterTable", () => {
     voiceSelect.value = "male_adult_01";
     voiceSelect.dispatchEvent(new Event("change", { bubbles: true }));
     expect(onVoiceChange).toHaveBeenCalledWith("elizabeth", "male_adult_01");
+  });
+
+  test("shows empty state message when no characters", () => {
+    render(
+      <CharacterTable
+        characters={[]}
+        voices={VOICE_OPTIONS}
+        onGenderChange={() => {}}
+        onVoiceChange={() => {}}
+      />
+    );
+
+    expect(screen.getByText("No characters detected yet. Run analysis first.")).toBeInTheDocument();
   });
 });
