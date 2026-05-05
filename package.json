@@ -1,0 +1,10 @@
+{
+  "name": "audiobook-generator",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces"
+  }
+}
