@@ -24,6 +24,12 @@ def test_voice_registry_declares_language_and_license_metadata():
 
     narrator = voices["narrator_default"]
     assert narrator["languages"] == ["en"]
-    assert narrator["backend"] == "mock"
     assert "licenseNotes" in narrator
+
+
+def test_voice_registry_has_parler_descriptions():
+    voices = voice_registry()
+    for voice_id, entry in voices.items():
+        assert "parlerDescription" in entry, f"{voice_id} missing parlerDescription"
+        assert len(entry["parlerDescription"]) > 20, f"{voice_id} description too short"
 

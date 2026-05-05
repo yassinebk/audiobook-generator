@@ -12,8 +12,13 @@ VOICE_REGISTRY = {
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral", "tense", "sad", "happy"],
-        "backend": "mock",
-        "licenseNotes": "placeholder voice",
+        "backend": "parler",
+        "licenseNotes": "Parler TTS Apache 2.0",
+        "parlerDescription": (
+            "A middle-aged male speaker with a warm, clear, and measured voice "
+            "delivers the narration at a comfortable pace in a quiet studio environment. "
+            "The recording is clean with no background noise."
+        ),
     },
     "female_adult_01": {
         "id": "female_adult_01",
@@ -22,8 +27,13 @@ VOICE_REGISTRY = {
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral", "afraid", "happy", "sad", "angry", "excited"],
-        "backend": "mock",
-        "licenseNotes": "placeholder voice",
+        "backend": "parler",
+        "licenseNotes": "Parler TTS Apache 2.0",
+        "parlerDescription": (
+            "A young adult female speaker with a clear, expressive voice "
+            "delivers her lines in a quiet indoor setting. "
+            "The recording is crisp with no background noise."
+        ),
     },
     "male_adult_01": {
         "id": "male_adult_01",
@@ -32,8 +42,13 @@ VOICE_REGISTRY = {
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral", "angry", "tense", "excited"],
-        "backend": "mock",
-        "licenseNotes": "placeholder voice",
+        "backend": "parler",
+        "licenseNotes": "Parler TTS Apache 2.0",
+        "parlerDescription": (
+            "An adult male speaker with a deep, resonant voice "
+            "delivers his lines in a quiet indoor setting. "
+            "The recording is clean with no background noise."
+        ),
     },
     "neutral_dialogue_01": {
         "id": "neutral_dialogue_01",
@@ -42,8 +57,13 @@ VOICE_REGISTRY = {
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral"],
-        "backend": "mock",
-        "licenseNotes": "placeholder voice",
+        "backend": "parler",
+        "licenseNotes": "Parler TTS Apache 2.0",
+        "parlerDescription": (
+            "A speaker with a clear, neutral voice delivers dialogue "
+            "in a quiet studio environment. "
+            "The recording has no background noise."
+        ),
     },
 }
 
