@@ -200,7 +200,119 @@ article select {
     flex-direction: column;
   }
 
+/* Character table */
+.character-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.character-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid #d7dde5;
+  color: #66717f;
+  font-weight: 600;
+}
+
+.character-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #dfe5ec;
+  vertical-align: middle;
+}
+
+.character-table tr.low-confidence {
+  background: rgba(200, 50, 50, 0.06);
+}
+
+.character-table select {
+  min-height: 32px;
+  border: 1px solid #cfd7e2;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  color: #17202a;
+  background: #ffffff;
+}
+
+/* Confidence bars */
+.confidence-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.confidence-fill {
+  height: 8px;
+  border-radius: 4px;
+  min-width: 4px;
+  transition: width 0.3s ease;
+}
+
+.confidence-label {
+  font-size: 0.75rem;
+  color: #66717f;
+  white-space: nowrap;
+}
+
+.warning-icon {
+  margin-left: 4px;
+  font-size: 0.875rem;
+}
+
+/* Save/Review messages */
+.saved-message {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #166534;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+}
+
+.hint {
+  color: #66717f;
+  font-size: 0.8125rem;
+  margin-top: 12px;
+}
+
+/* Review panel spans two columns */
+.review-panel {
+  grid-column: span 2;
+}
+
+/* Disabled buttons */
+.primary-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #d7dde5;
+  }
+
+  .workspace {
+    padding: 22px;
+  }
+
+  .workspace-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .review-panel {
+    grid-column: span 1;
   }
 }
