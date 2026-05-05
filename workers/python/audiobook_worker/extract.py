@@ -9,6 +9,8 @@ import fitz
 from bs4 import BeautifulSoup
 from ebooklib import epub
 
+from audiobook_worker.ocr import classify_pdf_text_layer
+
 
 @dataclass(frozen=True)
 class ExtractedBookText:
@@ -56,6 +58,7 @@ def _extract_epub(path: Path) -> ExtractedBookText:
 
 
 def _extract_pdf(path: Path) -> ExtractedBookText:
+    text_layer = classify_pdf_text_layer(path)
     document = fitz.open(path)
     page_texts: list[str] = []
     try:
@@ -72,9 +75,9 @@ def _extract_pdf(path: Path) -> ExtractedBookText:
     return ExtractedBookText(
         kind="pdf",
         text=text,
-        metadata=metadata,
-        requires_ocr=not bool(text),
-        warnings=["requires_ocr"] if not text else [],
+        metadata={**metadata, "text_layer": text_layer},
+        requires_ocr=text_layer in {"scanned", "mixed"},
+        warnings=["requires_ocr"] if text_layer in {"scanned", "mixed"} else [],
     )
 
 
@@ -85,4 +88,3 @@ def _normalize_text(text: str) -> str:
         if line:
             paragraphs.append(line)
     return "\n".join(paragraphs)
-
