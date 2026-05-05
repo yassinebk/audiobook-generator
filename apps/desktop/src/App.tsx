@@ -42,6 +42,13 @@ interface AnalysisState {
   scriptPaths: Record<string, string>;
 }
 
+interface RightsResult {
+  classification: string;
+  reason: string;
+  requiresAttestation: boolean;
+  evidence: string[];
+}
+
 type PipelineStage = "idle" | "importing" | "analyzing" | "saving" | "generating" | "done" | "error";
 
 const correctionsStore = createCorrectionsStore();
@@ -71,6 +78,9 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [rights, setRights] = useState<RightsResult | null>(null);
+  const [rightsAttested, setRightsAttested] = useState(false);
+  const [useLlm, setUseLlm] = useState(false);
 
   const correctionState = useSyncExternalStore(
     correctionsStore.subscribe,
@@ -88,6 +98,8 @@ export function App() {
     setError(null);
     setAnalysis(null);
     setAudioPath(null);
+    setRights(null);
+    setRightsAttested(false);
     correctionsStore.reset();
 
     try {
@@ -113,6 +125,25 @@ export function App() {
         chapters: artifact.metadata.chapters,
       });
       setProgress(10);
+
+      // Check rights
+      try {
+        const rightsResult = await workerCall("check_rights", {
+          bookPath: path,
+          metadata: {},
+        });
+        if (rightsResult.status === "succeeded") {
+          setRights({
+            classification: rightsResult.classification as string,
+            reason: rightsResult.reason as string,
+            requiresAttestation: rightsResult.requiresAttestation as boolean,
+            evidence: rightsResult.evidence as string[],
+          });
+        }
+      } catch {
+        setRights({ classification: "unknown", reason: "check_failed", requiresAttestation: true, evidence: [] });
+      }
+
       setStage("idle");
     } catch (err) {
       setError(String(err));
@@ -144,7 +175,7 @@ export function App() {
           title: chapter.title,
           chapterTextPath: chapter.textPath,
           outputDirectory: scriptDir,
-          mockLlm: true,
+          mockLlm: !useLlm,
         });
 
         if (result.status !== "succeeded") continue;
@@ -212,6 +243,7 @@ export function App() {
         },
         outputDirectory: `${book.workDir}/scripts`,
         language: "en",
+        mockLlm: !useLlm,
       });
 
       if (result.status !== "succeeded") {
@@ -345,16 +377,26 @@ export function App() {
         >
           {stage === "importing" ? "Importing..." : "Import Book"}
         </button>
-        {book && !analysis && (
+        {book && !analysis && rights?.classification !== "blocked" && (
           <button
             className="primary-action"
             type="button"
             onClick={handleAnalyze}
-            disabled={stage === "analyzing"}
+            disabled={stage === "analyzing" || (rights?.requiresAttestation && !rightsAttested)}
             style={{ marginTop: 8 }}
           >
-            {stage === "analyzing" ? "Analyzing..." : "Analyze Book"}
+            {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : "Analyze Book"}
           </button>
+        )}
+        {book && (
+          <label className="llm-toggle" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: "0.875rem" }}>
+            <input
+              type="checkbox"
+              checked={useLlm}
+              onChange={(e) => setUseLlm(e.target.checked)}
+            />
+            <span>Use LLM (slower, accurate)</span>
+          </label>
         )}
         {analysis && (
           <button
@@ -460,11 +502,33 @@ export function App() {
           </article>
           <article>
             <h3>Rights</h3>
-            <p>Unknown or restricted license status will require confirmation before generation.</p>
-            <label className="attestation">
-              <input type="checkbox" />
-              <span>I have the right to convert this book</span>
-            </label>
+            {rights ? (
+              <>
+                <p className={`rights-badge rights-${rights.classification}`}>
+                  {rights.classification.toUpperCase()}
+                  {rights.classification === "blocked" && " — Cannot proceed"}
+                </p>
+                <p className="rights-reason">{rights.reason.replace(/_/g, " ")}</p>
+                {rights.requiresAttestation && (
+                  <label className="attestation">
+                    <input
+                      type="checkbox"
+                      checked={rightsAttested}
+                      onChange={(e) => setRightsAttested(e.target.checked)}
+                    />
+                    <span>I have the right to convert this book</span>
+                  </label>
+                )}
+              </>
+            ) : (
+              <>
+                <p>Unknown or restricted license status will require confirmation before generation.</p>
+                <label className="attestation">
+                  <input type="checkbox" disabled />
+                  <span>I have the right to convert this book</span>
+                </label>
+              </>
+            )}
           </article>
           <article className="review-panel">
             <h3>Review</h3>

@@ -213,6 +213,7 @@ def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
     output_directory = Path(request["outputDirectory"])
     output_directory.mkdir(parents=True, exist_ok=True)
     corrections = request.get("corrections", {})
+    analyzer = MockLLMAnalyzer() if request.get("mockLlm") else default_analyzer()
 
     artifacts = []
     for chapter in request["chapters"]:
@@ -224,6 +225,7 @@ def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
             text=chapter_text,
             language=request.get("language", "en"),
             corrections=corrections,
+            analyzer=analyzer,
         )
         script_path = output_directory / f"{chapter['chapterId']}.json"
         _write_json(script_path, script)
