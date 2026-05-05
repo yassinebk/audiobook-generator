@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from audiobook_worker.dialogue import segment_dialogue
 from audiobook_worker.llm import ChapterAnalysisRequest, MockLLMAnalyzer
 
@@ -150,14 +152,40 @@ def build_chapter_script_with_corrections(
     corrections: dict,
     analyzer=None,
 ) -> dict:
+    if corrections is None:
+        raise ValueError("corrections must be a dict, got None")
+    if not isinstance(corrections, dict):
+        raise ValueError(
+            f"corrections must be a dict, got {type(corrections).__name__}"
+        )
+
+    for item in corrections.get("aliasMerges", []):
+        if "from" not in item:
+            raise KeyError("aliasMerges item missing required key 'from'")
+        if "to" not in item:
+            raise KeyError("aliasMerges item missing required key 'to'")
+
+    for item in corrections.get("genderOverrides", []):
+        if "characterId" not in item:
+            raise KeyError("genderOverrides item missing required key 'characterId'")
+        if "gender" not in item:
+            raise KeyError("genderOverrides item missing required key 'gender'")
+
+    for item in corrections.get("voiceOverrides", []):
+        if "characterId" not in item:
+            raise KeyError("voiceOverrides item missing required key 'characterId'")
+        if "voiceId" not in item:
+            raise KeyError("voiceOverrides item missing required key 'voiceId'")
+
     alias_map: dict[str, str] = {}
     for merge in corrections.get("aliasMerges", []):
         alias_map[merge["from"].lower()] = merge["to"]
 
     if alias_map:
-        import re
         for alias, canonical in alias_map.items():
-            pattern = re.compile(re.escape(alias), re.IGNORECASE)
+            pattern = re.compile(
+                r"\b" + re.escape(alias) + r"\b", re.IGNORECASE
+            )
             text = pattern.sub(canonical, text)
 
     gender_overrides: dict[str, str] = {}
@@ -191,6 +219,12 @@ def build_chapter_script_with_corrections(
             segment["voiceId"] = voice_overrides[speaker_id]
         elif speaker_id in gender_overrides:
             segment["voiceId"] = _voice_for_gender(gender_overrides[speaker_id])
+
+    voice_ids = {s["voiceId"] for s in script["segments"]}
+    voice_ids.add("narrator_default")
+    script["voices"] = [
+        VOICE_REGISTRY[vid] for vid in sorted(voice_ids) if vid in VOICE_REGISTRY
+    ]
 
     return script
 
