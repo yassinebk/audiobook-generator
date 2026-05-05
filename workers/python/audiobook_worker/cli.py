@@ -90,6 +90,8 @@ def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
         return _apply_corrections(request)
     if command == "_read_file":
         return _read_file(request)
+    if command == "check_rights":
+        return _check_rights(request)
     return _response(
         "failed",
         error={
@@ -241,6 +243,21 @@ def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
 def _read_file(request: dict[str, Any]) -> dict[str, Any]:
     content = Path(request["path"]).read_text(encoding="utf-8")
     return json.loads(content)
+
+
+def _check_rights(request: dict[str, Any]) -> dict[str, Any]:
+    from audiobook_worker.rights import classify_rights
+
+    result = classify_rights(
+        input_path=Path(request["bookPath"]),
+        metadata=request.get("metadata", {}),
+    )
+    payload = _response("succeeded")
+    payload["classification"] = result.classification
+    payload["reason"] = result.reason
+    payload["requiresAttestation"] = result.requires_attestation
+    payload["evidence"] = result.evidence
+    return payload
 
 
 if __name__ == "__main__":

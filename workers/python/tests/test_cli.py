@@ -157,3 +157,47 @@ def test_read_file_command(tmp_path: Path):
     result = json.loads(output_path.read_text())
     assert result == data
 
+
+def test_check_rights_classifies_allowed_public_domain(tmp_path: Path):
+    from audiobook_worker.cli import main
+
+    book_path = tmp_path / "test.txt"
+    book_path.write_text("Project Gutenberg public domain work", encoding="utf-8")
+
+    request = {
+        "bookPath": str(book_path),
+        "metadata": {"title": "Test Book"},
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(request), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    exit_code = main(["check_rights", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result["status"] == "succeeded"
+    assert result["classification"] == "allowed"
+    assert result["reason"] == "public_domain_notice"
+    assert result["requiresAttestation"] == False
+    assert result["evidence"] == ["public_domain_notice"]
+
+
+def test_check_rights_classifies_blocked_drm(tmp_path: Path):
+    from audiobook_worker.cli import main
+
+    request = {
+        "bookPath": str(tmp_path / "nonexistent.txt"),
+        "metadata": {"drm": True},
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(request), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    exit_code = main(["check_rights", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result["classification"] == "blocked"
+    assert result["reason"] == "drm_detected"
+
