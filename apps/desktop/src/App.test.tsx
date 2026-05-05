@@ -14,10 +14,11 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Rights" })).toBeInTheDocument();
     expect(screen.getByLabelText("I have the right to convert this book")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Review" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Character alias")).toBeInTheDocument();
-    expect(screen.getByLabelText("Character gender")).toBeInTheDocument();
-    expect(screen.getByLabelText("Assigned voice")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Regenerate Affected Chapters" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Export" })).toBeInTheDocument();
+  });
+
+  test("review panel shows placeholder text when no analysis loaded", () => {
+    render(<App />);
+    expect(screen.getByText("Run analysis first to see the character table and make corrections.")).toBeInTheDocument();
   });
 });
