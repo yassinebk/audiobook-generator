@@ -72,3 +72,56 @@ def test_generates_script_segment_audio_and_chapter_audio(tmp_path: Path):
 
     assert assemble["status"] == "succeeded"
     assert Path(assemble["artifacts"][0]["path"]).exists()
+
+
+def test_corrections_flow_applies_alias_merge_and_regenerates(tmp_path: Path):
+    chapter_path = tmp_path / "chapter_001.txt"
+    chapter_path.write_text('"Over here," Lizzy called. "Coming," Elizabeth replied.', encoding="utf-8")
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir()
+
+    # Step 1: Run initial analysis
+    analyze = run_worker(
+        "analyze_chapter",
+        {
+            "bookId": "book_123",
+            "chapterId": "chapter_001",
+            "title": "Chapter 1",
+            "language": "en",
+            "chapterTextPath": str(chapter_path),
+            "outputDirectory": str(script_dir),
+        },
+        tmp_path,
+    )
+    assert analyze["status"] == "succeeded"
+
+    # Step 2: Apply alias merge correction
+    corrections = run_worker(
+        "apply_corrections",
+        {
+            "bookId": "book_123",
+            "chapters": [
+                {"chapterId": "chapter_001", "textPath": str(chapter_path), "title": "Chapter 1"}
+            ],
+            "corrections": {
+                "aliasMerges": [{"from": "Lizzy", "to": "Elizabeth"}],
+                "genderOverrides": [],
+                "voiceOverrides": [],
+            },
+            "outputDirectory": str(script_dir),
+            "language": "en",
+        },
+        tmp_path,
+    )
+    assert corrections["status"] == "succeeded"
+    corrected_path = Path(corrections["artifacts"][0]["path"])
+    corrected_script = json.loads(corrected_path.read_text())
+
+    # Speakers should be unified to elizabeth only
+    speakers = {seg["speakerId"] for seg in corrected_script["segments"] if seg["type"] == "dialogue"}
+    assert speakers == {"elizabeth"}
+
+    # Characters should have only one elizabeth entry
+    character_ids = {c["id"] for c in corrected_script["characters"]}
+    assert "elizabeth" in character_ids
+    assert "lizzy" not in character_ids
