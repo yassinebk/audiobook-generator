@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_json(output_path, payload)
         if payload.get("error", {}).get("code") == "unknown_command":
             return 2
-        return 0 if payload["status"] != "failed" else 1
+        return 0 if payload.get("status") != "failed" else 1
     except KeyError as error:
         payload = _response(
             "failed",
@@ -88,6 +88,8 @@ def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
         return _assemble_chapter_audio(request)
     if command == "apply_corrections":
         return _apply_corrections(request)
+    if command == "_read_file":
+        return _read_file(request)
     return _response(
         "failed",
         error={
@@ -234,6 +236,11 @@ def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
         })
 
     return _response("succeeded", artifacts=artifacts)
+
+
+def _read_file(request: dict[str, Any]) -> dict[str, Any]:
+    content = Path(request["path"]).read_text(encoding="utf-8")
+    return json.loads(content)
 
 
 if __name__ == "__main__":

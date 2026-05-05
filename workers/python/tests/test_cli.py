@@ -139,3 +139,21 @@ def test_apply_corrections_command(tmp_path: Path):
     speakers = {seg["speakerId"] for seg in script["segments"] if seg["type"] == "dialogue"}
     assert speakers == {"elizabeth"}
 
+
+def test_read_file_command(tmp_path: Path):
+    from audiobook_worker.cli import main
+
+    data = {"key": "value", "nested": [1, 2]}
+    file_path = tmp_path / "test.json"
+    file_path.write_text(json.dumps(data), encoding="utf-8")
+
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps({"path": str(file_path)}), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    exit_code = main(["_read_file", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result == data
+

@@ -181,25 +181,6 @@ article select {
   cursor: pointer;
 }
 
-@media (max-width: 760px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid #d7dde5;
-  }
-
-  .workspace {
-    padding: 22px;
-  }
-
-  .workspace-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
 /* Character table */
 .character-table {
   width: 100%;
