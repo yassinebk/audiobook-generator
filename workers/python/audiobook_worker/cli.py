@@ -8,7 +8,7 @@ from typing import Any
 from audiobook_worker.audio import assemble_chapter_audio
 from audiobook_worker.llm import default_analyzer
 from audiobook_worker.script_builder import build_chapter_script
-from audiobook_worker.tts import MockTTSBackend
+from audiobook_worker.tts import MockTTSBackend, ParlerTTSBackend
 
 
 def _response(
@@ -118,7 +118,12 @@ def _synthesize_segment_audio(request: dict[str, Any]) -> dict[str, Any]:
     segment = next(
         item for item in script["segments"] if item["id"] == request["segmentId"]
     )
-    artifact = MockTTSBackend().synthesize_segment(segment, Path(request["outputDirectory"]))
+    backend_name = request.get("backend", "mock")
+    if backend_name == "parler":
+        backend = ParlerTTSBackend()
+    else:
+        backend = MockTTSBackend()
+    artifact = backend.synthesize_segment(segment, Path(request["outputDirectory"]))
     return _response(
         "succeeded",
         artifacts=[
