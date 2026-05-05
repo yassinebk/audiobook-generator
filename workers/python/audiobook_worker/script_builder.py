@@ -55,9 +55,10 @@ def build_chapter_script(
     title: str,
     text: str,
     language: str,
+    analyzer=None,
 ) -> dict:
     raw_segments = segment_dialogue(text)
-    analyzer = MockLLMAnalyzer()
+    analyzer = analyzer or MockLLMAnalyzer()
     analysis = analyzer.analyze_chapter(
         ChapterAnalysisRequest(
             book_id=book_id,
@@ -155,4 +156,3 @@ def _emotion_intensity(emotion: str) -> float:
     if emotion in {"tense", "sad", "happy"}:
         return 0.45
     return 0.2
-

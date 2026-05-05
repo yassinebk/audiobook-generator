@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from audiobook_worker.audio import assemble_chapter_audio
+from audiobook_worker.llm import default_analyzer
 from audiobook_worker.script_builder import build_chapter_script
 from audiobook_worker.tts import MockTTSBackend
 
@@ -102,6 +103,7 @@ def _analyze_chapter(request: dict[str, Any]) -> dict[str, Any]:
         title=request.get("title", request["chapterId"]),
         text=chapter_text,
         language=request.get("language", "en"),
+        analyzer=default_analyzer(),
     )
     script_path = output_directory / f"{request['chapterId']}.json"
     _write_json(script_path, script)

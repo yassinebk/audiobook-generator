@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ def run_worker(command: str, input_payload: dict, tmp_path: Path) -> dict:
     result = subprocess.run(
         [sys.executable, "-m", "audiobook_worker.cli", command, str(input_path), str(output_path)],
         cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "AUDIOBOOK_LLM_MODEL": "mock"},
         text=True,
         capture_output=True,
         check=False,
@@ -70,4 +72,3 @@ def test_generates_script_segment_audio_and_chapter_audio(tmp_path: Path):
 
     assert assemble["status"] == "succeeded"
     assert Path(assemble["artifacts"][0]["path"]).exists()
-
