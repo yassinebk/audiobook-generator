@@ -552,7 +552,31 @@ export function App() {
           <article>
             <h3>Export</h3>
             {audioPath ? (
-              <p>Chapter audio ready: <code>{audioPath}</code></p>
+              <>
+                <p>Chapter audio ready:</p>
+                <code className="export-path">{audioPath}</code>
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const savePath = await open({
+                        multiple: false,
+                        defaultPath: "chapter.wav",
+                        filters: [{ name: "Audio", extensions: ["wav"] }],
+                      });
+                      if (!savePath) return;
+                      await invoke("copy_file", { from: audioPath, to: savePath as string });
+                      setSavedMessage(`Saved to ${savePath}`);
+                    } catch (err) {
+                      setError(String(err));
+                    }
+                  }}
+                  style={{ marginTop: 12 }}
+                >
+                  Save Audio File
+                </button>
+              </>
             ) : (
               <p>Completed chapter audio and metadata exports will be available after generation.</p>
             )}

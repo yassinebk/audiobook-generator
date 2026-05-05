@@ -329,3 +329,16 @@ article select {
   min-height: auto;
   margin: 0;
 }
+
+/* Export path */
+.export-path {
+  display: block;
+  word-break: break-all;
+  padding: 8px 10px;
+  margin: 8px 0;
+  background: #f1f5f9;
+  border: 1px solid #dfe5ec;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #475569;
+}
