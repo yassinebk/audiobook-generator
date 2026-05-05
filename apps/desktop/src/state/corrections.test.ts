@@ -56,4 +56,38 @@ describe("corrections store", () => {
     store.setGender("elizabeth", "male");
     expect(store.get().genderOverrides).toEqual([{ characterId: "elizabeth", gender: "male" }]);
   });
+
+  test("addMerge deduplicates by from", () => {
+    const store = createCorrectionsStore();
+    store.addMerge({ from: "Lizzy", to: "Elizabeth" });
+    store.addMerge({ from: "Lizzy", to: "Beth" });
+    expect(store.get().aliasMerges).toEqual([{ from: "Lizzy", to: "Beth" }]);
+  });
+
+  test("setVoice replaces existing override for same character", () => {
+    const store = createCorrectionsStore();
+    store.setVoice("elizabeth", "female_adult_01");
+    store.setVoice("elizabeth", "male_adult_01");
+    expect(store.get().voiceOverrides).toEqual([{ characterId: "elizabeth", voiceId: "male_adult_01" }]);
+  });
+
+  test("reset clears all state", () => {
+    const store = createCorrectionsStore();
+    store.addMerge({ from: "Lizzy", to: "Elizabeth" });
+    store.setGender("elizabeth", "female");
+    store.markSaved(["ch01"]);
+    store.reset();
+    expect(store.get()).toEqual(createCorrectionsStore().get());
+  });
+
+  test("subscribe returns unsubscribe and calls listener on change", () => {
+    const store = createCorrectionsStore();
+    let calls = 0;
+    const unsub = store.subscribe(() => { calls++; });
+    store.addMerge({ from: "A", to: "B" });
+    expect(calls).toBe(1);
+    unsub();
+    store.addMerge({ from: "C", to: "D" });
+    expect(calls).toBe(1);
+  });
 });

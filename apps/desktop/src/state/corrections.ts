@@ -60,15 +60,6 @@ export function createCorrectionsStore() {
       notify();
     },
 
-    removeMerge(from: string) {
-      state = {
-        ...state,
-        aliasMerges: state.aliasMerges.filter(m => m.from !== from),
-        dirty: true,
-      };
-      notify();
-    },
-
     setGender(characterId: string, gender: string) {
       state = {
         ...state,
