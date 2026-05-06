@@ -61,14 +61,17 @@ export function createAudiobookStore(path: string) {
       title TEXT NOT NULL,
       source_path TEXT NOT NULL,
       source_language TEXT NOT NULL,
-      output_language TEXT NOT NULL
+      output_language TEXT NOT NULL,
+      work_dir TEXT NOT NULL DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS chapters (
-      id TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
       book_id TEXT NOT NULL REFERENCES books(id),
       title TEXT NOT NULL,
-      status TEXT NOT NULL
+      status TEXT NOT NULL DEFAULT 'pending',
+      script_path TEXT,
+      PRIMARY KEY (id, book_id)
     );
 
     CREATE TABLE IF NOT EXISTS characters (
@@ -107,10 +110,9 @@ export function createAudiobookStore(path: string) {
   return {
     createBook(record: BookRecord) {
       db.prepare(`
-        INSERT INTO books (id, title, source_path, source_language, output_language)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(record.id, record.title, record.sourcePath, record.sourceLanguage, record.outputLanguage);
-    },
+        INSERT OR REPLACE INTO books (id, title, source_path, source_language, output_language, work_dir)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(record.id, record.title, record.sourcePath, record.sourceLanguage, record.outputLanguage, (record as any).workDir ?? "");
 
     getBook(id: string): BookRecord | undefined {
       const row = db.prepare("SELECT * FROM books WHERE id = ?").get(id) as BookRow | undefined;
@@ -177,6 +179,33 @@ export function createAudiobookStore(path: string) {
         mapArtifact,
       );
     },
+
+    upsertChapter(record: ChapterRecord & { scriptPath?: string }) {
+      db.prepare(`
+        INSERT OR REPLACE INTO chapters (id, book_id, title, status, script_path)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(record.id, record.bookId, record.title, record.status, record.scriptPath ?? null);
+    },
+
+    getChaptersWithScripts(bookId: string): Array<{ id: string; scriptPath: string }> {
+      const rows = db.prepare(
+        "SELECT id, script_path FROM chapters WHERE book_id = ? AND script_path IS NOT NULL"
+      ).all(bookId) as Array<{ id: string; script_path: string }>;
+      return rows.map(r => ({ id: r.id, scriptPath: r.script_path }));
+    },
+
+    getChapter(bookId: string, chapterId: string): (ChapterRecord & { scriptPath?: string }) | undefined {
+      const row = db.prepare(
+        "SELECT * FROM chapters WHERE book_id = ? AND id = ?"
+      ).get(bookId, chapterId) as (ChapterRow & { script_path?: string }) | undefined;
+      if (!row) return undefined;
+      return { ...mapChapter(row), scriptPath: row.script_path ?? undefined };
+    },
+
+    getBookBySourcePath(sourcePath: string): BookRecord | undefined {
+      const row = db.prepare("SELECT * FROM books WHERE source_path = ?").get(sourcePath) as BookRow | undefined;
+      return row ? mapBook(row) : undefined;
+    },
   };
 }
 
@@ -197,6 +226,7 @@ interface BookRow {
   source_path: string;
   source_language: string;
   output_language: string;
+  work_dir: string;
 }
 
 interface ChapterRow {
