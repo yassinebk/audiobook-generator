@@ -470,6 +470,11 @@ export function App() {
 
   const allChaptersSelected = book ? book.chapters.length > 0 && book.chapters.every(c => selectedChapters.has(c.id)) : false;
 
+  function handleStop() {
+    abortRef.current?.abort();
+    setAnalyzeProgress("Stopping...");
+  }
+
   const isBusy = stage === "importing" || stage === "analyzing" || stage === "saving" || stage === "generating";
 
   const steps = [
