@@ -369,8 +369,6 @@ export function App() {
     ]);
 
     const startTime = Date.now();
-    let totalSegments = 0;
-    let doneSegments = 0;
 
     try {
       const newAudioPaths: Record<string, string> = {};
