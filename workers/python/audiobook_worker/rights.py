@@ -65,8 +65,14 @@ def classify_rights(
 
 
 def _read_sample(path: Path) -> str:
+    suffix = path.suffix.lower()
+    # Binary formats: extract the first 20KB of decodable text; skip if
+    # the file is pure binary (EPUB, PDF) to avoid garbage in the combined
+    # rights text that could produce false negatives.
+    if suffix in (".epub", ".pdf", ".mobi", ".azw", ".azw3"):
+        return ""
     try:
-        return path.read_text(encoding="utf-8", errors="ignore")[:20_000]
+        return path.read_text(encoding="utf-8", errors="replace")[:20_000]
     except OSError:
         return ""
 

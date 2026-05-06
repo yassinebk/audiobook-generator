@@ -149,24 +149,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
-    if command == "extract_book":
-        return _extract_book(request)
-    if command == "analyze_chapter":
-        return _analyze_chapter(request)
-    if command == "synthesize_segment_audio":
-        return _synthesize_segment_audio(request)
-    if command == "synthesize_chapter_audio":
-        return _synthesize_chapter_audio(request)
-    if command == "assemble_chapter_audio":
-        return _assemble_chapter_audio(request)
-    if command == "apply_corrections":
-        return _apply_corrections(request)
-    if command == "_read_file":
-        return _read_file(request)
-    if command == "_write_file":
-        return _write_file(request)
-    if command == "check_rights":
-        return _check_rights(request)
+    handler = _dispatch_table.get(command)
+    if handler is not None:
+        return handler(request)
     return _response(
         "failed",
         error={
@@ -421,6 +406,19 @@ def _check_rights(request: dict[str, Any]) -> dict[str, Any]:
     payload["requiresAttestation"] = result.requires_attestation
     payload["evidence"] = result.evidence
     return payload
+
+
+_dispatch_table: dict[str, Any] = {
+    "extract_book": _extract_book,
+    "analyze_chapter": _analyze_chapter,
+    "synthesize_segment_audio": _synthesize_segment_audio,
+    "synthesize_chapter_audio": _synthesize_chapter_audio,
+    "assemble_chapter_audio": _assemble_chapter_audio,
+    "apply_corrections": _apply_corrections,
+    "_read_file": _read_file,
+    "_write_file": _write_file,
+    "check_rights": _check_rights,
+}
 
 
 if __name__ == "__main__":

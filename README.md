@@ -106,6 +106,29 @@ If no model config is found, the worker falls back to a deterministic mock
 analyzer that produces valid but unsophisticated scripts — useful for
 testing the TTS pipeline without an API key.
 
+### TTS Configuration
+
+Parler TTS acceleration is controlled via the `AUDIOBOOK_TTS_DEVICE`
+environment variable:
+
+```sh
+# Auto-detect (recommended default — prefers MPS on macOS)
+export AUDIOBOOK_TTS_DEVICE="auto"
+
+# Force macOS GPU acceleration via Metal
+export AUDIOBOOK_TTS_DEVICE="mps"
+
+# Force CUDA GPU on Linux/Windows
+export AUDIOBOOK_TTS_DEVICE="cuda"
+
+# CPU-only (slow but always works)
+export AUDIOBOOK_TTS_DEVICE="cpu"
+```
+
+Valid values are `auto`, `mps`, `cuda`, and `cpu`. An invalid value
+or an unavailable device (e.g. `mps` on a non-Apple machine) will
+raise a clear error at synthesis time.
+
 ## Project Structure
 
 ```

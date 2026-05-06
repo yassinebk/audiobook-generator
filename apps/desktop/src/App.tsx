@@ -1,35 +1,28 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { flushSync } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { tempDir } from "@tauri-apps/api/path";
 
 import type {
   AnalysisState,
   BookState,
-  CharacterMeta,
   ChapterMeta,
   PipelineStage,
   ProgressDetail,
   RightsResult,
   WorkspaceStep,
 } from "./types";
-import { generationProgressDetails } from "./lib/generationProgress";
 import { workerCall } from "./lib/workerCall";
-import { synthesizeChapter } from "./lib/generation";
-import {
-  cachedBookFromExtraction,
-  extractionCachePath,
-  writeExtractionCache,
-} from "./lib/importCache";
 import { createCorrectionsStore } from "./state/corrections";
-import { Sidebar } from "./components/Sidebar";
-import { Step1Import } from "./components/steps/Step1Import";
-import { Step2Analyze } from "./components/steps/Step2Analyze";
-import { Step3Review } from "./components/steps/Step3Review";
-import { Step4Generate } from "./components/steps/Step4Generate";
-import { StepDone } from "./components/steps/StepDone";
 import { createAudiobookStore } from "./state/store";
+import { useBookImport } from "./hooks/useBookImport";
+import { useChapterAnalysis } from "./hooks/useChapterAnalysis";
+import { useGeneration } from "./hooks/useGeneration";
+import { Sidebar } from "./components/Sidebar";
+import { ImportContainer } from "./components/containers/ImportContainer";
+import { AnalyzeContainer } from "./components/containers/AnalyzeContainer";
+import { ReviewContainer } from "./components/containers/ReviewContainer";
+import { GenerateContainer } from "./components/containers/GenerateContainer";
+import { DoneContainer } from "./components/containers/DoneContainer";
 
 const db = createAudiobookStore();
 
@@ -40,10 +33,10 @@ const VOICE_OPTIONS = [
   { id: "neutral_dialogue_01", displayName: "Neutral Dialogue 01" },
 ];
 
-// Module-level singleton: one store per app session.
 const correctionsStore = createCorrectionsStore();
 
 export function App() {
+  // ── Pipeline state ──────────────────────────────────────────────────────
   const [book, setBook] = useState<BookState | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
   const [chapterAudioPaths, setChapterAudioPaths] = useState<Record<string, string>>({});
@@ -72,273 +65,29 @@ export function App() {
     stage === "saving" ||
     stage === "generating";
 
-  // ── Handlers ────────────────────────────────────────────────────────────
+  // ── Hooks ───────────────────────────────────────────────────────────────
 
-  async function handleImportBook() {
-    const path = await open({
-      multiple: false,
-      filters: [{ name: "Book", extensions: ["epub", "pdf"] }],
+  const { handleImportBook } = useBookImport({
+    setBook, setAnalysis, setChapterAudioPaths, setStage, setError, setProgress,
+    setRights, setRightsAttested, setAnalyzeProgress, setChapterStatuses,
+    setProgressDetail, setSelectedChapters, setCurrentStep, setSavedMessage,
+    abortRef, correctionsStore, db,
+  });
+
+  const { handleAnalyze } = useChapterAnalysis({
+    book, selectedChapters, setStage, setError, setSavedMessage,
+    setAnalyzeProgress, setChapterStatuses, setProgressDetail, setProgress,
+    setAnalysis, setCurrentStep, abortRef, db,
+  });
+
+  const { handleGenerate, handleRegenerateChapter, handleRegenerateAll } =
+    useGeneration({
+      book, analysis, selectedChapters, chapterAudioPaths, correctionState,
+      setStage, setError, setAnalyzeProgress, setProgressDetail, setProgress,
+      setChapterAudioPaths, setCurrentStep, abortRef,
     });
-    if (!path) return;
 
-    abortRef.current?.abort();
-    setStage("importing");
-    setError(null);
-    setAnalysis(null);
-    setChapterAudioPaths({});
-    setRights(null);
-    setRightsAttested(false);
-    correctionsStore.reset();
-    setAnalyzeProgress("");
-    setChapterStatuses({});
-    setProgressDetail([]);
-
-    try {
-      const tmp = await tempDir();
-      const bookStem =
-        (path as string).split("/").pop()?.replace(/\.[^.]+$/, "") ?? "book";
-      const workDir = `${tmp}/audiobook-generator/${bookStem}`;
-      const sourcePath = path as string;
-
-      let extracted = await cachedBookFromExtraction({
-        cachePath: extractionCachePath(workDir),
-        sourcePath,
-        readJson: async (cachePath) =>
-          await invoke<unknown>("run_worker", {
-            command: "_read_file",
-            inputJson: JSON.stringify({ path: cachePath }),
-          }),
-      });
-
-      if (extracted) {
-        setAnalyzeProgress("Restored cached book extraction.");
-      } else {
-        const result = await workerCall("extract_book", {
-          bookPath: path,
-          outputDirectory: `${workDir}/chapters`,
-        });
-
-        if (result.status !== "succeeded") {
-          const err = result.error as { message: string } | undefined;
-          throw new Error(err?.message ?? "extract_book failed");
-        }
-
-        const artifact = (
-          result.artifacts as Array<{
-            metadata: { title: string; chapters: ChapterMeta[] };
-          }>
-        )[0];
-
-        extracted = {
-          title: artifact.metadata.title,
-          bookId: bookStem,
-          workDir,
-          chapters: artifact.metadata.chapters,
-        };
-
-        await writeExtractionCache({
-          sourcePath,
-          book: extracted,
-          writeJson: async (cachePath, payload) => {
-            await workerCall("_write_file", {
-              path: cachePath,
-              content: JSON.stringify(payload),
-            });
-          },
-        });
-      }
-
-      setBook(extracted);
-      setSelectedChapters(new Set(extracted.chapters.map((c) => c.id)));
-      setProgress(10);
-
-      // Persist to DB
-      db.createBook({ id: extracted.bookId, title: extracted.title, sourcePath, workDir: extracted.workDir }).catch(() => {});
-
-      // Restore previously analyzed chapters
-      try {
-        const existing = await db.getChaptersWithScripts(extracted.bookId);
-        if (existing.length > 0) {
-          const preAnalyzed = new Set(existing.map(c => c.id));
-          setSelectedChapters(prev => new Set([...prev].filter(c => !preAnalyzed.has(c))));
-          setProgress(20);
-          setAnalyzeProgress(`Restored ${existing.length} previously analyzed chapter(s).`);
-          // Restore analysis state
-          const restoredScripts: Record<string, string> = {};
-          const restoredChars: CharacterMeta[] = [];
-          const restoredVoices: AnalysisState["voices"] = [];
-          const seenIds = new Set<string>();
-          for (const ch of existing) {
-            restoredScripts[ch.id] = ch.scriptPath;
-            try {
-              const raw = await invoke<string>("run_worker", { command: "_read_file", inputJson: JSON.stringify({ path: ch.scriptPath }) }).catch(() => "{}");
-              const data = JSON.parse(raw) as { characters?: CharacterMeta[]; voices?: AnalysisState["voices"] } | null;
-              for (const v of data?.voices ?? []) restoredVoices.push(v);
-              for (const c of data?.characters ?? []) { if (!seenIds.has(c.id)) { seenIds.add(c.id); restoredChars.push(c); } }
-            } catch {}
-          }
-          setAnalysis({ characters: restoredChars, voices: restoredVoices, scriptPaths: restoredScripts });
-        }
-      } catch {}
-
-      try {
-        const rightsResult = await workerCall("check_rights", {
-          bookPath: path,
-          metadata: {},
-        });
-        if (rightsResult.status === "succeeded") {
-          setRights({
-            classification: rightsResult.classification as string,
-            reason: rightsResult.reason as string,
-            requiresAttestation: rightsResult.requiresAttestation as boolean,
-            evidence: rightsResult.evidence as string[],
-          });
-        }
-      } catch {
-        setRights({
-          classification: "unknown",
-          reason: "check_failed",
-          requiresAttestation: true,
-          evidence: [],
-        });
-      }
-
-      setStage("idle");
-      setCurrentStep(2);
-    } catch (err) {
-      setError(String(err));
-      setStage("error");
-    }
-  }
-
-  async function handleAnalyze() {
-    if (!book) return;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStage("analyzing");
-    setError(null);
-    setSavedMessage(null);
-    setAnalyzeProgress("Starting analysis...");
-    setChapterStatuses({});
-    setProgressDetail([
-      { label: "Model", value: "DeepSeek Flash" },
-      { label: "Chapters", value: String(book.chapters.length) },
-    ]);
-
-    const startTime = Date.now();
-    const modelLabel = "DeepSeek Flash";
-
-    try {
-      const scriptDir = `${book.workDir}/scripts`;
-      const scripts: Record<string, string> = {};
-      const allCharacters: CharacterMeta[] = [];
-      const allVoices: AnalysisState["voices"] = [];
-      const seenCharIds = new Set<string>();
-      const seenVoiceIds = new Set<string>();
-      const statuses: Record<string, string> = {};
-
-      const chaptersToAnalyze = book.chapters.filter((c) =>
-        selectedChapters.has(c.id),
-      );
-
-      for (let i = 0; i < chaptersToAnalyze.length; i++) {
-        if (controller.signal.aborted) break;
-        const chapter = chaptersToAnalyze[i];
-
-        setProgress(10 + Math.round((i / chaptersToAnalyze.length) * 25));
-        setAnalyzeProgress(
-          `Analyzing chapter ${i + 1} of ${chaptersToAnalyze.length} using ${modelLabel}...`,
-        );
-        setProgressDetail([
-          { label: "Model", value: modelLabel },
-          { label: "Progress", value: `Chapter ${i + 1} of ${chaptersToAnalyze.length}` },
-          {
-            label: "Current",
-            value:
-              chapter.title.length > 30
-                ? chapter.title.slice(0, 30) + "..."
-                : chapter.title,
-          },
-          { label: "Elapsed", value: `${Math.round((Date.now() - startTime) / 1000)}s` },
-        ]);
-        statuses[chapter.id] = "analyzing";
-        setChapterStatuses({ ...statuses });
-
-        try {
-          const result = await workerCall("analyze_chapter", {
-            bookId: book.bookId,
-            chapterId: chapter.id,
-            title: chapter.title,
-            chapterTextPath: chapter.textPath,
-            outputDirectory: scriptDir,
-          });
-
-          if (result.status !== "succeeded") {
-            statuses[chapter.id] = "failed";
-            setChapterStatuses({ ...statuses });
-            continue;
-          }
-
-          const artifact = (result.artifacts as Array<{ path: string }>)[0];
-          scripts[chapter.id] = artifact.path;
-          statuses[chapter.id] = "done";
-          db.upsertChapter({ id: chapter.id, bookId: book.bookId, title: chapter.title, status: "succeeded", scriptPath: artifact.path }).catch(() => {});
-
-          const scriptRaw = await invoke<string>("run_worker", {
-            command: "_read_file",
-            inputJson: JSON.stringify({ path: artifact.path }),
-          }).catch(() => "{}");
-
-          const scriptData = JSON.parse(scriptRaw) as {
-            characters?: CharacterMeta[];
-            voices?: AnalysisState["voices"];
-          } | null;
-
-          for (const v of scriptData?.voices ?? []) {
-            if (!seenVoiceIds.has(v.id)) {
-              seenVoiceIds.add(v.id);
-              allVoices.push(v);
-            }
-          }
-          for (const c of scriptData?.characters ?? []) {
-            if (!seenCharIds.has(c.id)) {
-              seenCharIds.add(c.id);
-              allCharacters.push(c);
-            }
-          }
-        } catch {
-          statuses[chapter.id] = "failed";
-        }
-
-        setChapterStatuses({ ...statuses });
-      }
-
-      const doneCount = Object.values(statuses).filter((s) => s === "done").length;
-      const wasStopped = controller.signal.aborted;
-
-      if (doneCount > 0) {
-        setAnalysis({ characters: allCharacters, voices: allVoices, scriptPaths: scripts });
-      }
-      setAnalyzeProgress(
-        wasStopped
-          ? `Stopped after ${doneCount} of ${chaptersToAnalyze.length} chapters.${doneCount > 0 ? " You can generate audio for completed chapters." : ""}`
-          : `Analysis complete: ${doneCount} of ${book.chapters.length} chapters analyzed.`,
-      );
-      setProgress(40);
-      setStage("idle");
-      abortRef.current = null;
-      if (doneCount > 0) setCurrentStep(3);
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        setError(String(err));
-        setStage("error");
-      } else {
-        setAnalyzeProgress("Analysis stopped.");
-        setStage("idle");
-        abortRef.current = null;
-      }
-    }
-  }
+  // ── Corrections ─────────────────────────────────────────────────────────
 
   async function handleSaveCorrections() {
     if (!book || !analysis) return;
@@ -387,7 +136,7 @@ export function App() {
         }).catch(() => "{}");
 
         const firstScript = JSON.parse(firstScriptRaw) as {
-          characters?: CharacterMeta[];
+          characters?: import("./types").CharacterMeta[];
           voices?: AnalysisState["voices"];
         } | null;
 
@@ -414,134 +163,6 @@ export function App() {
     }
   }
 
-  async function generateChapters(chaptersToGenerate: ChapterMeta[]) {
-    if (!book || !analysis) return;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStage("generating");
-    setError(null);
-    setAnalyzeProgress("");
-
-    setProgressDetail([
-      { label: "Backend", value: "Parler TTS (MPS)" },
-      { label: "Chapters", value: String(chaptersToGenerate.length) },
-    ]);
-
-    const startTime = Date.now();
-    let totalSegments = 0;
-    let doneSegments = 0;
-
-    try {
-      const newAudioPaths: Record<string, string> = {};
-
-      for (let ci = 0; ci < chaptersToGenerate.length; ci++) {
-        if (controller.signal.aborted) break;
-        const chapter = chaptersToGenerate[ci];
-        const scriptPath = analysis.scriptPaths[chapter.id];
-        if (!scriptPath) continue;
-
-        const segDir = `${book.workDir}/segments/${chapter.id}`;
-        const assembledPath = `${book.workDir}/audio/${chapter.id}.wav`;
-
-        const scriptRaw = await invoke<string>("run_worker", {
-          command: "_read_file",
-          inputJson: JSON.stringify({ path: scriptPath }),
-        }).catch(() => "{}");
-
-        const script = JSON.parse(scriptRaw) as {
-          segments?: Array<{ id: string; voiceId?: string; emotion?: string }>;
-        };
-        const segments = script.segments ?? [];
-
-        setAnalyzeProgress(
-          `Synthesizing chapter ${ci + 1} of ${chaptersToGenerate.length} (${segments.length} segments)...`,
-        );
-        totalSegments += segments.length;
-
-        const setGenerationProgress = () => {
-          setProgress(40 + Math.round((doneSegments / Math.max(totalSegments, 1)) * 50));
-          setProgressDetail(
-            generationProgressDetails({
-              now: Date.now(),
-              startTime,
-              doneSegments,
-              totalSegments,
-              chapterIndex: ci + 1,
-              chapterCount: chaptersToGenerate.length,
-              segmentCount: segments.length,
-            }),
-          );
-        };
-
-        flushSync(() => {
-          setGenerationProgress();
-        });
-
-        const progressTimer = window.setInterval(setGenerationProgress, 1000);
-        let result: Record<string, unknown>;
-        try {
-          result = await synthesizeChapter({
-            scriptPath,
-            segmentAudioDirectory: segDir,
-            outputPath: assembledPath,
-          });
-        } finally {
-          window.clearInterval(progressTimer);
-        }
-        doneSegments += segments.length;
-
-        if (result.status === "succeeded") {
-          newAudioPaths[chapter.id] = assembledPath;
-        }
-      }
-
-      setChapterAudioPaths((prev) => ({ ...prev, ...newAudioPaths }));
-      const wasStopped = controller.signal.aborted;
-      setProgress(wasStopped ? progress : 100);
-      setAnalyzeProgress(
-        wasStopped
-          ? "Generation stopped. Partial audio available."
-          : "Audio generation complete.",
-      );
-      const generatedCount = Object.keys(newAudioPaths).length;
-      setStage(generatedCount > 0 || !wasStopped ? "done" : "idle");
-      abortRef.current = null;
-      if (generatedCount > 0) setCurrentStep("done");
-    } catch (err) {
-      if (!controller.signal.aborted) {
-        setError(String(err));
-        setStage("error");
-      } else {
-        setAnalyzeProgress("Generation stopped.");
-        setStage("idle");
-        abortRef.current = null;
-      }
-    }
-  }
-
-  async function handleGenerate() {
-    if (!book || !analysis) return;
-    const chaptersToGenerate = (
-      correctionState.affectedChapters.length > 0
-        ? book.chapters.filter((c) =>
-            correctionState.affectedChapters.includes(c.id),
-          )
-        : book.chapters
-    ).filter((c) => selectedChapters.has(c.id) && analysis.scriptPaths[c.id]);
-
-    await generateChapters(chaptersToGenerate);
-  }
-
-  async function handleRegenerateChapter(chapter: ChapterMeta) {
-    await generateChapters([chapter]);
-  }
-
-  async function handleRegenerateAll() {
-    if (!book) return;
-    const generatedChapters = book.chapters.filter((c) => chapterAudioPaths[c.id]);
-    await generateChapters(generatedChapters);
-  }
-
   const handleGenderChange = useCallback((characterId: string, gender: string) => {
     correctionsStore.setGender(characterId, gender);
     setSavedMessage(null);
@@ -553,8 +174,8 @@ export function App() {
       if (!current) return current;
       return {
         ...current,
-        characters: current.characters.map((character) =>
-          character.id === characterId ? { ...character, voiceId } : character,
+        characters: current.characters.map((c) =>
+          c.id === characterId ? { ...c, voiceId } : c,
         ),
       };
     });
@@ -570,22 +191,17 @@ export function App() {
       const script = {
         bookId: book.bookId,
         chapterId: "voice_preview",
-        segments: [
-          {
-            id: `preview_${voiceId}`,
-            text: "This is a voice preview.",
-            voiceId,
-            emotion: "neutral",
-            intensity: 0.2,
-            pace: "normal",
-          },
-        ],
+        segments: [{
+          id: `preview_${voiceId}`,
+          text: "This is a voice preview.",
+          voiceId,
+          emotion: "neutral",
+          intensity: 0.2,
+          pace: "normal",
+        }],
       };
 
-      await workerCall("_write_file", {
-        path: scriptPath,
-        content: JSON.stringify(script),
-      });
+      await workerCall("_write_file", { path: scriptPath, content: JSON.stringify(script) });
       const result = await workerCall("synthesize_segment_audio", {
         scriptPath,
         segmentId: `preview_${voiceId}`,
@@ -607,6 +223,8 @@ export function App() {
     }
   }
 
+  // ── Chapter selection ───────────────────────────────────────────────────
+
   function toggleChapter(chapterId: string) {
     setSelectedChapters((prev) => {
       const next = new Set(prev);
@@ -621,9 +239,7 @@ export function App() {
     setSelectedChapters((prev) => {
       const allSelected =
         book.chapters.length > 0 && book.chapters.every((c) => prev.has(c.id));
-      return allSelected
-        ? new Set<string>()
-        : new Set(book.chapters.map((c) => c.id));
+      return allSelected ? new Set<string>() : new Set(book.chapters.map((c) => c.id));
     });
   }
 
@@ -649,7 +265,7 @@ export function App() {
     }
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────
 
   return (
     <main className="app-shell">
@@ -668,25 +284,25 @@ export function App() {
 
       <section className="workspace" aria-label="Audiobook job">
         {currentStep === 1 && (
-          <Step1Import
+          <ImportContainer
             book={book}
             rights={rights}
             rightsAttested={rightsAttested}
+            stage={stage}
             isBusy={isBusy}
-            isImporting={stage === "importing"}
             onImport={handleImportBook}
             onAttest={setRightsAttested}
             onContinue={() => setCurrentStep(2)}
           />
         )}
         {currentStep === 2 && book && (
-          <Step2Analyze
+          <AnalyzeContainer
             book={book}
             analysis={analysis}
             rights={rights}
             rightsAttested={rightsAttested}
+            stage={stage}
             isBusy={isBusy}
-            isAnalyzing={stage === "analyzing"}
             selectedChapters={selectedChapters}
             chapterStatuses={chapterStatuses}
             analyzeProgress={analyzeProgress}
@@ -699,12 +315,12 @@ export function App() {
           />
         )}
         {currentStep === 3 && analysis && (
-          <Step3Review
+          <ReviewContainer
             analysis={analysis}
             correctionState={correctionState}
             savedMessage={savedMessage}
+            stage={stage}
             isBusy={isBusy}
-            isSaving={stage === "saving"}
             voices={VOICE_OPTIONS}
             onSave={handleSaveCorrections}
             onContinue={() => setCurrentStep(4)}
@@ -714,14 +330,14 @@ export function App() {
           />
         )}
         {currentStep === 4 && book && analysis && (
-          <Step4Generate
+          <GenerateContainer
             book={book}
             analysis={analysis}
             selectedChapters={selectedChapters}
             correctionDirty={correctionState.dirty}
             chapterAudioPaths={chapterAudioPaths}
+            stage={stage}
             isBusy={isBusy}
-            isGenerating={stage === "generating"}
             analyzeProgress={analyzeProgress}
             progressDetail={progressDetail}
             progress={progress}
@@ -730,7 +346,7 @@ export function App() {
           />
         )}
         {currentStep === "done" && book && (
-          <StepDone
+          <DoneContainer
             book={book}
             chapterAudioPaths={chapterAudioPaths}
             analysis={analysis}

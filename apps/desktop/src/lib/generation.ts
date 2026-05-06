@@ -1,9 +1,11 @@
 import { workerCall } from "./workerCall";
 
+import type { WorkerResponse } from "@audiobook-generator/shared";
+
 type WorkerCall = (
   command: string,
   input: Record<string, unknown>,
-) => Promise<Record<string, unknown>>;
+) => Promise<WorkerResponse & Record<string, unknown>>;
 
 interface SynthesizeChapterInput {
   scriptPath: string;
