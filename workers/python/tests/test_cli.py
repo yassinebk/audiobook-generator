@@ -133,13 +133,54 @@ def test_synthesize_chapter_audio_merges_adjacent_compatible_segments_and_cleans
     assert exit_code == 0
     result = json.loads(output_path.read_text())
     assert result["status"] == "succeeded"
-    assert result["metadata"] == {
-        "originalSegmentCount": 3,
-        "synthesizedSegmentCount": 2,
-    }
+    assert result["metadata"]["originalSegmentCount"] == 3
+    assert result["metadata"]["synthesizedSegmentCount"] == 2
+    assert result["metadata"]["cachedSegmentCount"] == 0
     assert len(result["artifacts"]) == 2
     assert result["artifacts"][0]["metadata"]["sourceSegmentIds"] == ["seg_0001", "seg_0002"]
     assert not (audio_dir / "stale.wav").exists()
+
+
+def test_synthesize_chapter_audio_reuses_cached_segments_without_loading_backend(tmp_path: Path):
+    from audiobook_worker.cli import main
+
+    script = {
+        "bookId": "book1",
+        "chapterId": "ch01",
+        "segments": [
+            {"id": "seg_0001", "text": "Hello.", "voiceId": "narrator_default", "emotion": "neutral", "pace": "normal"},
+        ],
+    }
+    script_path = tmp_path / "script.json"
+    script_path.write_text(json.dumps(script), encoding="utf-8")
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+
+    first_request = {
+        "scriptPath": str(script_path),
+        "outputDirectory": str(audio_dir),
+        "backend": "mock",
+        "mergeSegments": False,
+        "cacheSegments": True,
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(first_request), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    assert main(["synthesize_chapter_audio", str(input_path), str(output_path)]) == 0
+    first_result = json.loads(output_path.read_text(encoding="utf-8"))
+    assert first_result["artifacts"][0]["metadata"]["cacheHit"] is False
+    cached_wav = audio_dir / "seg_0001.wav"
+    original_mtime = cached_wav.stat().st_mtime_ns
+
+    with patch("audiobook_worker.cli.MockTTSBackend") as mock_backend:
+        mock_backend.side_effect = AssertionError("backend should not load on cache hit")
+        assert main(["synthesize_chapter_audio", str(input_path), str(output_path)]) == 0
+
+    second_result = json.loads(output_path.read_text(encoding="utf-8"))
+    assert second_result["artifacts"][0]["metadata"]["cacheHit"] is True
+    assert second_result["artifacts"][0]["metadata"]["sourceSegmentIds"] == ["seg_0001"]
+    assert cached_wav.stat().st_mtime_ns == original_mtime
 
 
 def test_apply_corrections_command(tmp_path: Path):

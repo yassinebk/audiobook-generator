@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,75 @@ def _response(
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _segment_cache_signature(segment: dict[str, Any], backend_name: str, model_id: str | None) -> str:
+    payload = {
+        "backend": backend_name,
+        "modelId": model_id or "default",
+        "text": segment.get("text", ""),
+        "voiceId": segment.get("voiceId", "narrator_default"),
+        "emotion": segment.get("emotion", "neutral"),
+        "intensity": segment.get("intensity"),
+        "pace": segment.get("pace", "normal"),
+        "sourceSegmentIds": segment.get("sourceSegmentIds", [segment["id"]]),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _segment_cache_metadata_path(audio_path: Path) -> Path:
+    return audio_path.with_suffix(audio_path.suffix + ".json")
+
+
+def _read_cached_segment_artifact(
+    segment: dict[str, Any],
+    output_directory: Path,
+    expected_signature: str,
+) -> dict[str, Any] | None:
+    audio_path = output_directory / f"{segment['id']}.wav"
+    metadata_path = _segment_cache_metadata_path(audio_path)
+    if not audio_path.exists() or not metadata_path.exists():
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if metadata.get("signature") != expected_signature:
+        return None
+    return {
+        "kind": "segment_audio",
+        "path": str(audio_path),
+        "metadata": {
+            "durationSeconds": metadata.get("durationSeconds", 0),
+            "device": metadata.get("device"),
+            "sourceSegmentIds": metadata.get("sourceSegmentIds", segment.get("sourceSegmentIds", [segment["id"]])),
+            "cacheHit": True,
+        },
+    }
+
+
+def _write_segment_cache_metadata(
+    audio_path: Path,
+    *,
+    signature: str,
+    duration_seconds: float,
+    backend_name: str,
+    model_id: str | None,
+    device: str | None,
+    source_segment_ids: list[str],
+) -> None:
+    _write_json(
+        _segment_cache_metadata_path(audio_path),
+        {
+            "signature": signature,
+            "backend": backend_name,
+            "modelId": model_id or "default",
+            "durationSeconds": duration_seconds,
+            "device": device,
+            "sourceSegmentIds": source_segment_ids,
+        },
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -211,29 +281,69 @@ def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
         segments = original_segments
     output_directory = Path(request["outputDirectory"])
     output_directory.mkdir(parents=True, exist_ok=True)
-    for stale_audio in output_directory.glob("*.wav"):
-        stale_audio.unlink()
     backend_name = request.get("backend", "mock")
-    if backend_name == "parler":
-        backend = ParlerTTSBackend()
-    else:
-        backend = MockTTSBackend()
+    model_id = request.get("modelId")
+    cache_segments = request.get("cacheSegments", True)
+    backend = None
+
+    def get_backend():
+        nonlocal backend
+        if backend is None:
+            if backend_name == "parler":
+                backend = ParlerTTSBackend(model_id) if model_id else ParlerTTSBackend()
+            else:
+                backend = MockTTSBackend()
+        return backend
+
     artifacts = []
+    expected_audio_paths = {output_directory / f"{segment['id']}.wav" for segment in segments}
     for segment in segments:
-        artifact = backend.synthesize_segment(segment, output_directory)
+        signature = _segment_cache_signature(segment, backend_name, model_id)
+        if cache_segments:
+            cached_artifact = _read_cached_segment_artifact(
+                segment,
+                output_directory,
+                signature,
+            )
+            if cached_artifact is not None:
+                artifacts.append(cached_artifact)
+                continue
+
+        active_backend = get_backend()
+        artifact = active_backend.synthesize_segment(segment, output_directory)
+        device = getattr(active_backend, "_device", None)
+        source_segment_ids = segment.get("sourceSegmentIds", [segment["id"]])
+        if cache_segments:
+            _write_segment_cache_metadata(
+                artifact.path,
+                signature=signature,
+                duration_seconds=artifact.duration_seconds,
+                backend_name=backend_name,
+                model_id=model_id,
+                device=device,
+                source_segment_ids=source_segment_ids,
+            )
         artifacts.append({
             "kind": artifact.kind,
             "path": str(artifact.path),
             "metadata": {
                 "durationSeconds": artifact.duration_seconds,
-                "device": getattr(backend, "_device", None),
-                "sourceSegmentIds": segment.get("sourceSegmentIds", [segment["id"]]),
+                "device": device,
+                "sourceSegmentIds": source_segment_ids,
+                "cacheHit": False,
             },
         })
+    for stale_audio in output_directory.glob("*.wav"):
+        if stale_audio not in expected_audio_paths:
+            stale_audio.unlink()
+            stale_metadata = _segment_cache_metadata_path(stale_audio)
+            if stale_metadata.exists():
+                stale_metadata.unlink()
     payload = _response("succeeded", artifacts=artifacts)
     payload["metadata"] = {
         "originalSegmentCount": len(original_segments),
         "synthesizedSegmentCount": len(segments),
+        "cachedSegmentCount": sum(1 for artifact in artifacts if artifact["metadata"].get("cacheHit")),
     }
     return payload
 
