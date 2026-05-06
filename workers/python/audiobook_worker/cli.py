@@ -92,6 +92,8 @@ def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
         return _apply_corrections(request)
     if command == "_read_file":
         return _read_file(request)
+    if command == "_write_file":
+        return _write_file(request)
     if command == "check_rights":
         return _check_rights(request)
     return _response(
@@ -268,6 +270,13 @@ def _apply_corrections(request: dict[str, Any]) -> dict[str, Any]:
 def _read_file(request: dict[str, Any]) -> dict[str, Any]:
     content = Path(request["path"]).read_text(encoding="utf-8")
     return json.loads(content)
+
+
+def _write_file(request: dict[str, Any]) -> dict[str, Any]:
+    path = Path(request["path"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(request["content"], encoding="utf-8")
+    return _response("succeeded")
 
 
 def _check_rights(request: dict[str, Any]) -> dict[str, Any]:
