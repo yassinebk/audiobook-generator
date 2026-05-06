@@ -1,7 +1,7 @@
 use std::process::Command;
 
 #[tauri::command]
-fn run_worker(command: String, input_json: String) -> Result<String, String> {
+async fn run_worker(command: String, input_json: String) -> Result<String, String> {
     let temp_dir = std::env::temp_dir();
     let input_path = temp_dir.join(format!("audiobook-{}-input.json", command));
     let output_path = temp_dir.join(format!("audiobook-{}-output.json", command));
@@ -19,17 +19,24 @@ fn run_worker(command: String, input_json: String) -> Result<String, String> {
 
     let python = worker_dir.join(".venv/bin/python3");
 
-    let result = Command::new(&python)
-        .args([
-            "-m",
-            "audiobook_worker.cli",
-            &command,
-            input_path.to_str().unwrap(),
-            output_path.to_str().unwrap(),
-        ])
-        .current_dir(&worker_dir)
-        .output()
-        .map_err(|e| format!("Failed to spawn worker: {}", e))?;
+    let input = input_path.to_str().unwrap().to_string();
+    let output = output_path.to_str().unwrap().to_string();
+
+    let result = tokio::task::spawn_blocking(move || {
+        Command::new(&python)
+            .args([
+                "-m",
+                "audiobook_worker.cli",
+                &command,
+                &input,
+                &output,
+            ])
+            .current_dir(&worker_dir)
+            .output()
+    })
+    .await
+    .map_err(|e| format!("Worker task join failed: {}", e))?
+    .map_err(|e| format!("Failed to spawn worker: {}", e))?;
 
     if let Ok(output) = std::fs::read_to_string(&output_path) {
         return Ok(output);
