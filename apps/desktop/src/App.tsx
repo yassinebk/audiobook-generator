@@ -1,7 +1,7 @@
 import { useState, useSyncExternalStore, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { tmpdir } from "@tauri-apps/api/path";
+import { tempDir } from "@tauri-apps/api/path";
 import { CharacterTable } from "./components/CharacterTable";
 import {
   createCorrectionsStore,
@@ -103,7 +103,7 @@ export function App() {
     correctionsStore.reset();
 
     try {
-      const tmp = await tmpdir();
+      const tmp = await tempDir();
       const bookStem = (path as string).split("/").pop()?.replace(/\.[^.]+$/, "") ?? "book";
       const workDir = `${tmp}/audiobook-generator/${bookStem}`;
 

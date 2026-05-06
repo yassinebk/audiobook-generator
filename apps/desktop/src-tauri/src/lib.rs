@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::sync::mpsc;
 
 #[tauri::command]
 async fn run_worker(command: String, input_json: String) -> Result<String, String> {
@@ -22,25 +23,30 @@ async fn run_worker(command: String, input_json: String) -> Result<String, Strin
     let input = input_path.to_str().unwrap().to_string();
     let output = output_path.to_str().unwrap().to_string();
 
-    let result = tokio::task::spawn_blocking(move || {
-        Command::new(&python)
-            .args([
-                "-m",
-                "audiobook_worker.cli",
-                &command,
-                &input,
-                &output,
-            ])
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = Command::new(&python)
+            .args(["-m", "audiobook_worker.cli", &command, &input, &output])
             .current_dir(&worker_dir)
-            .output()
-    })
-    .await
-    .map_err(|e| format!("Worker task join failed: {}", e))?
-    .map_err(|e| format!("Failed to spawn worker: {}", e))?;
+            .output();
+        let _ = tx.send(result);
+    });
+
+    let result = rx
+        .recv()
+        .map_err(|_| "Worker thread panicked".to_string())?
+        .map_err(|e| format!("Failed to spawn worker: {}", e))?;
 
     if let Ok(output) = std::fs::read_to_string(&output_path) {
         return Ok(output);
     }
+
+    Err(format!(
+        "Worker exited {:?}: {}",
+        result.status.code(),
+        String::from_utf8_lossy(&result.stderr)
+    ))
+}
 
     Err(format!(
         "Worker exited {:?}: {}",
