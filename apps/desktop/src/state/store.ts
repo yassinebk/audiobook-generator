@@ -114,7 +114,7 @@ export function createAudiobookStore(path: string) {
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(record.id, record.title, record.sourcePath, record.sourceLanguage, record.outputLanguage, (record as any).workDir ?? "");
 
-    getBook(id: string): BookRecord | undefined {
+    getBook(id: string) {
       const row = db.prepare("SELECT * FROM books WHERE id = ?").get(id) as BookRow | undefined;
       return row ? mapBook(row) : undefined;
     },
@@ -194,7 +194,7 @@ export function createAudiobookStore(path: string) {
       return rows.map(r => ({ id: r.id, scriptPath: r.script_path }));
     },
 
-    getChapter(bookId: string, chapterId: string): (ChapterRecord & { scriptPath?: string }) | undefined {
+    getChapter(bookId: string, chapterId: string) {
       const row = db.prepare(
         "SELECT * FROM chapters WHERE book_id = ? AND id = ?"
       ).get(bookId, chapterId) as (ChapterRow & { script_path?: string }) | undefined;
@@ -202,7 +202,7 @@ export function createAudiobookStore(path: string) {
       return { ...mapChapter(row), scriptPath: row.script_path ?? undefined };
     },
 
-    getBookBySourcePath(sourcePath: string): BookRecord | undefined {
+    getBookBySourcePath(sourcePath: string) {
       const row = db.prepare("SELECT * FROM books WHERE source_path = ?").get(sourcePath) as BookRow | undefined;
       return row ? mapBook(row) : undefined;
     },
