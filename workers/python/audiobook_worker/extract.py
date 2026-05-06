@@ -6,6 +6,7 @@ from typing import Any
 
 import ebooklib
 import fitz
+import re
 from bs4 import BeautifulSoup
 from ebooklib import epub
 
@@ -117,9 +118,30 @@ def _extract_pdf(path: Path) -> ExtractedBookText:
 
 
 def _normalize_text(text: str) -> str:
-    lines = [" ".join(line.split()) for line in text.splitlines()]
-    paragraphs: list[str] = []
+    result = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Fix Gutenberg-style orphaned quotes: quote on its own line followed by text
+    result = re.sub(r'\n(["\u201c\u201d])\s*\n', r' \1 ', result)
+    # Fix split quotes: opening quote on own line
+    result = re.sub(r'\n(["\u201c])\s*\n\s*', r' \1', result)
+    # Fix closing quote on own line after text
+    result = re.sub(r'\n\s*(["\u201d])\s*\n', r'\1\n', result)
+    # Fix split words (lowercase line following uppercase-start line)
+    lines = result.splitlines()
+    merged: list[str] = []
     for line in lines:
-        if line:
-            paragraphs.append(line)
-    return "\n".join(paragraphs)
+        stripped = line.strip()
+        if not stripped:
+            if merged and merged[-1]:
+                merged.append("")
+            continue
+        if merged and merged[-1] and not merged[-1].endswith(("-", "—")):
+            first_char = stripped[0]
+            if first_char.islower() or first_char in ',.;:!?)"\'':  # continuation of previous line
+                merged[-1] = merged[-1] + stripped
+                continue
+        merged.append(stripped)
+    text = "\n\n".join(m for m in merged if m)
+    # Remove copyright/source notes in brackets
+    text = re.sub(r'\[[^\]]*?[Cc]opyright[^\]]*?\]', '', text)
+    text = re.sub(r'\[[^\]]*?[Pp]roduced[^\]]*?\]', '', text)
+    return text
