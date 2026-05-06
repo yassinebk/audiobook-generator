@@ -25,6 +25,23 @@ def test_infers_speaker_from_trailing_speech_tag():
     assert segments[0].warnings == []
 
 
+def test_infers_speaker_from_inverted_tag_with_cried():
+    text = '"Do you not want to know who has taken it?" cried his wife impatiently.'
+
+    segments = segment_dialogue(text)
+
+    assert segments[0].type == "dialogue"
+    assert segments[0].speaker_hint is not None
+
+
+def test_infers_speaker_from_mrs_title():
+    text = '"My dear Mr. Bennet," said Mrs. Bennet, "have you heard?"'
+
+    segments = segment_dialogue(text)
+
+    assert segments[0].speaker_hint == "Mrs. Bennet"
+
+
 def test_alternating_dialogue_without_tags_is_marked_uncertain():
     text = '"Hello."\n"Good morning."'
 

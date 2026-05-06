@@ -1,16 +1,4 @@
-interface CharacterMeta {
-  id: string;
-  canonicalName: string;
-  aliases: string[];
-  gender: string;
-  voiceId: string;
-  confidence: number;
-}
-
-interface VoiceOption {
-  id: string;
-  displayName: string;
-}
+import type { CharacterMeta, VoiceOption } from "../types";
 
 interface CharacterTableProps {
   characters: CharacterMeta[];
@@ -20,12 +8,17 @@ interface CharacterTableProps {
 }
 
 function confidenceColor(confidence: number): string {
-  if (confidence >= 0.8) return "var(--color-success, #22c55e)";
-  if (confidence >= 0.5) return "var(--color-warning, #eab308)";
-  return "var(--color-error, #ef4444)";
+  if (confidence >= 0.8) return "var(--success)";
+  if (confidence >= 0.5) return "var(--warning)";
+  return "var(--danger)";
 }
 
-export function CharacterTable({ characters, voices, onGenderChange, onVoiceChange }: CharacterTableProps) {
+export function CharacterTable({
+  characters,
+  voices,
+  onGenderChange,
+  onVoiceChange,
+}: CharacterTableProps) {
   if (characters.length === 0) {
     return <p>No characters detected yet. Run analysis first.</p>;
   }
@@ -46,7 +39,11 @@ export function CharacterTable({ characters, voices, onGenderChange, onVoiceChan
           <tr key={c.id} className={c.confidence < 0.5 ? "low-confidence" : ""}>
             <td>
               {c.canonicalName}
-              {c.confidence < 0.5 && <span aria-label="Low confidence" className="warning-icon">⚠</span>}
+              {c.confidence < 0.5 && (
+                <span aria-label="Low confidence" className="warning-icon">
+                  ⚠
+                </span>
+              )}
             </td>
             <td>{c.aliases.length > 0 ? c.aliases.join(", ") : "—"}</td>
             <td>
@@ -63,6 +60,7 @@ export function CharacterTable({ characters, voices, onGenderChange, onVoiceChan
             </td>
             <td>
               <select
+                className="dark-select"
                 aria-label="Gender"
                 value={c.gender}
                 onChange={(e) => onGenderChange(c.id, e.target.value)}
@@ -75,6 +73,7 @@ export function CharacterTable({ characters, voices, onGenderChange, onVoiceChan
             </td>
             <td>
               <select
+                className="dark-select"
                 aria-label="Voice"
                 value={c.voiceId}
                 onChange={(e) => onVoiceChange(c.id, e.target.value)}
