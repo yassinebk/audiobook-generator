@@ -7,6 +7,7 @@ from typing import Any
 
 from audiobook_worker.audio import assemble_chapter_audio
 from audiobook_worker.llm import MockLLMAnalyzer, default_analyzer
+from audiobook_worker.segment_merge import merge_tts_segments
 from audiobook_worker.script_builder import build_chapter_script, build_chapter_script_with_corrections
 from audiobook_worker.tts import MockTTSBackend, ParlerTTSBackend
 
@@ -200,9 +201,18 @@ def _synthesize_segment_audio(request: dict[str, Any]) -> dict[str, Any]:
 
 def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
     script = json.loads(Path(request["scriptPath"]).read_text(encoding="utf-8"))
-    segments = script["segments"]
+    original_segments = script["segments"]
+    if request.get("mergeSegments", True):
+        segments = merge_tts_segments(
+            original_segments,
+            max_words=int(request.get("maxMergedSegmentWords", 80)),
+        )
+    else:
+        segments = original_segments
     output_directory = Path(request["outputDirectory"])
     output_directory.mkdir(parents=True, exist_ok=True)
+    for stale_audio in output_directory.glob("*.wav"):
+        stale_audio.unlink()
     backend_name = request.get("backend", "mock")
     if backend_name == "parler":
         backend = ParlerTTSBackend()
@@ -217,9 +227,15 @@ def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
             "metadata": {
                 "durationSeconds": artifact.duration_seconds,
                 "device": getattr(backend, "_device", None),
+                "sourceSegmentIds": segment.get("sourceSegmentIds", [segment["id"]]),
             },
         })
-    return _response("succeeded", artifacts=artifacts)
+    payload = _response("succeeded", artifacts=artifacts)
+    payload["metadata"] = {
+        "originalSegmentCount": len(original_segments),
+        "synthesizedSegmentCount": len(segments),
+    }
+    return payload
 
 
 def _assemble_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:

@@ -25,6 +25,7 @@ describe("synthesizeChapter", () => {
       scriptPath: "/tmp/book/scripts/chapter_001.json",
       outputDirectory: "/tmp/book/segments/chapter_001",
       backend: "parler",
+      mergeSegments: true,
     });
     expect(worker).toHaveBeenNthCalledWith(2, "assemble_chapter_audio", {
       segmentAudioDirectory: "/tmp/book/segments/chapter_001",

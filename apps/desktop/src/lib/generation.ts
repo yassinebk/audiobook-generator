@@ -22,6 +22,7 @@ export async function synthesizeChapter({
     scriptPath,
     outputDirectory: segmentAudioDirectory,
     backend: "parler",
+    mergeSegments: true,
   });
 
   return worker("assemble_chapter_audio", {

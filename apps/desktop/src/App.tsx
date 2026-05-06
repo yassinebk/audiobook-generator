@@ -14,6 +14,7 @@ import type {
   RightsResult,
   WorkspaceStep,
 } from "./types";
+import { generationProgressDetails } from "./lib/generationProgress";
 import { workerCall } from "./lib/workerCall";
 import { synthesizeChapter } from "./lib/generation";
 import {
@@ -457,25 +458,36 @@ export function App() {
         );
         totalSegments += segments.length;
 
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        const avgPerSeg = doneSegments > 0 ? elapsed / doneSegments : 8;
-        const remaining = Math.round(avgPerSeg * (totalSegments - doneSegments));
-        flushSync(() => {
+        const setGenerationProgress = () => {
           setProgress(40 + Math.round((doneSegments / Math.max(totalSegments, 1)) * 50));
-          setProgressDetail([
-            { label: "Backend", value: "Parler TTS (MPS)" },
-            { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
-            { label: "Segments", value: String(segments.length) },
-            { label: "Elapsed", value: `${elapsed}s` },
-            { label: "ETA", value: `~${remaining}s` },
-          ]);
+          setProgressDetail(
+            generationProgressDetails({
+              now: Date.now(),
+              startTime,
+              doneSegments,
+              totalSegments,
+              chapterIndex: ci + 1,
+              chapterCount: chaptersToGenerate.length,
+              segmentCount: segments.length,
+            }),
+          );
+        };
+
+        flushSync(() => {
+          setGenerationProgress();
         });
 
-        const result = await synthesizeChapter({
-          scriptPath,
-          segmentAudioDirectory: segDir,
-          outputPath: assembledPath,
-        });
+        const progressTimer = window.setInterval(setGenerationProgress, 1000);
+        let result: Record<string, unknown>;
+        try {
+          result = await synthesizeChapter({
+            scriptPath,
+            segmentAudioDirectory: segDir,
+            outputPath: assembledPath,
+          });
+        } finally {
+          window.clearInterval(progressTimer);
+        }
         doneSegments += segments.length;
 
         if (result.status === "succeeded") {

@@ -100,6 +100,48 @@ def test_synthesize_segment_audio_uses_parler_backend(tmp_path: Path):
     mock_cls.from_pretrained.assert_called_once()
 
 
+def test_synthesize_chapter_audio_merges_adjacent_compatible_segments_and_cleans_stale_audio(tmp_path: Path):
+    from audiobook_worker.cli import main
+
+    script = {
+        "bookId": "book1",
+        "chapterId": "ch01",
+        "segments": [
+            {"id": "seg_0001", "text": "Hello", "voiceId": "narrator_default", "emotion": "neutral", "pace": "normal"},
+            {"id": "seg_0002", "text": "there.", "voiceId": "narrator_default", "emotion": "neutral", "pace": "normal"},
+            {"id": "seg_0003", "text": "Stop.", "voiceId": "male_adult_01", "emotion": "angry", "pace": "fast"},
+        ],
+    }
+    script_path = tmp_path / "script.json"
+    script_path.write_text(json.dumps(script), encoding="utf-8")
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    (audio_dir / "stale.wav").write_bytes(b"old")
+
+    request = {
+        "scriptPath": str(script_path),
+        "outputDirectory": str(audio_dir),
+        "backend": "mock",
+        "mergeSegments": True,
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(request), encoding="utf-8")
+    output_path = tmp_path / "output.json"
+
+    exit_code = main(["synthesize_chapter_audio", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result["status"] == "succeeded"
+    assert result["metadata"] == {
+        "originalSegmentCount": 3,
+        "synthesizedSegmentCount": 2,
+    }
+    assert len(result["artifacts"]) == 2
+    assert result["artifacts"][0]["metadata"]["sourceSegmentIds"] == ["seg_0001", "seg_0002"]
+    assert not (audio_dir / "stale.wav").exists()
+
+
 def test_apply_corrections_command(tmp_path: Path):
     from audiobook_worker.cli import main
 
@@ -200,4 +242,3 @@ def test_check_rights_classifies_blocked_drm(tmp_path: Path):
     result = json.loads(output_path.read_text())
     assert result["classification"] == "blocked"
     assert result["reason"] == "drm_detected"
-
