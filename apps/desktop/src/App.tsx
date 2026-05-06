@@ -80,7 +80,6 @@ export function App() {
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [rights, setRights] = useState<RightsResult | null>(null);
   const [rightsAttested, setRightsAttested] = useState(false);
-  const [useLlm, setUseLlm] = useState(false);
   const [analyzeProgress, setAnalyzeProgress] = useState<string>("");
   const [chapterStatuses, setChapterStatuses] = useState<Record<string, string>>({});
   const [progressDetail, setProgressDetail] = useState<Array<{ label: string; value: string }>>([]);
@@ -169,12 +168,12 @@ export function App() {
     setAnalyzeProgress("Starting analysis...");
     setChapterStatuses({});
     setProgressDetail([
-      { label: "Model", value: useLlm ? "DeepSeek Flash" : "Heuristics (offline)" },
+      { label: "Model", value: "DeepSeek Flash" },
       { label: "Chapters", value: String(book.chapters.length) },
     ]);
     const startTime = Date.now();
 
-    const modelLabel = useLlm ? "DeepSeek Flash" : "heuristics";
+    const modelLabel = "DeepSeek Flash";
 
     try {
       const scriptDir = `${book.workDir}/scripts`;
@@ -206,7 +205,6 @@ export function App() {
             title: chapter.title,
             chapterTextPath: chapter.textPath,
             outputDirectory: scriptDir,
-            mockLlm: !useLlm,
           });
 
           if (result.status !== "succeeded") {
@@ -298,7 +296,6 @@ export function App() {
         },
         outputDirectory: `${book.workDir}/scripts`,
         language: "en",
-        mockLlm: !useLlm,
       });
 
       if (result.status !== "succeeded") {
@@ -496,23 +493,6 @@ export function App() {
           >
             {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : "Analyze Book"}
           </button>
-        )}
-        {book && (
-          <div style={{ marginTop: 12 }}>
-            <label className="llm-toggle" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem" }}>
-              <input
-                type="checkbox"
-                checked={useLlm}
-                onChange={(e) => setUseLlm(e.target.checked)}
-              />
-              <span>Use LLM analysis</span>
-            </label>
-            {useLlm && (
-              <p style={{ margin: "4px 0 0 24px", fontSize: "0.75rem", color: "#66717f" }}>
-                DeepSeek Flash · character & emotion detection
-              </p>
-            )}
-          </div>
         )}
         {analysis && (
           <button
