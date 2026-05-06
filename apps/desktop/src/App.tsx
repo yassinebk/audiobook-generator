@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, useCallback } from "react";
+import { useState, useSyncExternalStore, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { tempDir } from "@tauri-apps/api/path";
@@ -84,6 +84,7 @@ export function App() {
   const [analyzeProgress, setAnalyzeProgress] = useState<string>("");
   const [chapterStatuses, setChapterStatuses] = useState<Record<string, string>>({});
   const [progressDetail, setProgressDetail] = useState<Array<{ label: string; value: string }>>([]);
+  const abortRef = useRef<AbortController | null>(null);
 
   const correctionState = useSyncExternalStore(
     correctionsStore.subscribe,
@@ -97,6 +98,7 @@ export function App() {
     });
     if (!path) return;
 
+    abortRef.current?.abort();
     setStage("importing");
     setError(null);
     setAnalysis(null);
@@ -159,6 +161,8 @@ export function App() {
 
   async function handleAnalyze() {
     if (!book) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setStage("analyzing");
     setError(null);
     setSavedMessage(null);
@@ -182,6 +186,7 @@ export function App() {
       const statuses: Record<string, string> = {};
 
       for (let i = 0; i < book.chapters.length; i++) {
+        if (controller.signal.aborted) break;
         const chapter = book.chapters[i];
         setProgress(10 + Math.round((i / book.chapters.length) * 25));
         setAnalyzeProgress(`Analyzing chapter ${i + 1} of ${book.chapters.length} using ${modelLabel}...`);
@@ -248,13 +253,25 @@ export function App() {
       }
 
       const doneCount = Object.values(statuses).filter(s => s === "done").length;
-      setAnalyzeProgress(`Analysis complete: ${doneCount} of ${book.chapters.length} chapters analyzed.`);
-      setAnalysis({ characters: allCharacters, voices: allVoices, scriptPaths: scripts });
-      setProgress(40);
+      const wasStopped = controller.signal.aborted;
+      if (doneCount > 0) {
+        setAnalysis({ characters: allCharacters, voices: allVoices, scriptPaths: scripts });
+      }
+      setAnalyzeProgress(wasStopped
+        ? `Stopped after ${doneCount} of ${book.chapters.length} chapters. ${doneCount > 0 ? "You can generate audio for completed chapters." : ""}`
+        : `Analysis complete: ${doneCount} of ${book.chapters.length} chapters analyzed.`);
+      setProgress(wasStopped ? 40 : 40);
       setStage("idle");
+      abortRef.current = null;
     } catch (err) {
-      setError(String(err));
-      setStage("error");
+      if (!controller.signal.aborted) {
+        setError(String(err));
+        setStage("error");
+      } else {
+        setAnalyzeProgress("Analysis stopped.");
+        setStage("idle");
+        abortRef.current = null;
+      }
     }
   }
 
@@ -331,6 +348,8 @@ export function App() {
 
   async function handleGenerate() {
     if (!book || !analysis) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setStage("generating");
     setError(null);
     setAnalyzeProgress("");
@@ -349,6 +368,7 @@ export function App() {
     try {
       let generatedPath: string | null = null;
       for (let ci = 0; ci < chaptersToGenerate.length; ci++) {
+        if (controller.signal.aborted) break;
         const chapter = chaptersToGenerate[ci];
         const scriptPath = analysis.scriptPaths[chapter.id];
         if (!scriptPath) continue;
@@ -367,6 +387,7 @@ export function App() {
         totalSegments += segments.length;
 
         for (let i = 0; i < segments.length; i++) {
+          if (controller.signal.aborted) break;
           setProgress(40 + Math.round(((doneSegments + i) / Math.max(totalSegments, 1)) * 50));
           if (segments[i]) {
             setProgressDetail([
@@ -402,12 +423,20 @@ export function App() {
       }
 
       if (generatedPath) setAudioPath(generatedPath);
-      setProgress(100);
-      setAnalyzeProgress("Audio generation complete.");
-      setStage("done");
+      const wasStopped = controller.signal.aborted;
+      setProgress(wasStopped ? Math.round(progress) : 100);
+      setAnalyzeProgress(wasStopped ? "Generation stopped. Partial audio available." : "Audio generation complete.");
+      setStage(wasStopped && generatedPath ? "done" : wasStopped ? "idle" : "done");
+      abortRef.current = null;
     } catch (err) {
-      setError(String(err));
-      setStage("error");
+      if (!controller.signal.aborted) {
+        setError(String(err));
+        setStage("error");
+      } else {
+        setAnalyzeProgress("Generation stopped.");
+        setStage("idle");
+        abortRef.current = null;
+      }
     }
   }
 
@@ -420,6 +449,11 @@ export function App() {
     correctionsStore.setVoice(characterId, voiceId);
     setSavedMessage(null);
   }, []);
+
+  function handleStop() {
+    abortRef.current?.abort();
+    setAnalyzeProgress("Stopping...");
+  }
 
   const isBusy = stage === "importing" || stage === "analyzing" || stage === "saving" || stage === "generating";
 
@@ -442,6 +476,16 @@ export function App() {
         >
           {stage === "importing" ? "Importing..." : "Import Book"}
         </button>
+        {isBusy && (
+          <button
+            className="stop-action"
+            type="button"
+            onClick={handleStop}
+            style={{ marginTop: 8 }}
+          >
+            Stop
+          </button>
+        )}
         {book && !analysis && rights?.classification !== "blocked" && (
           <button
             className="primary-action"

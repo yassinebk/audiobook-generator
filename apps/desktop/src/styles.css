@@ -355,6 +355,22 @@ article select {
   text-decoration: line-through;
 }
 
+/* Stop button */
+.stop-action {
+  width: 100%;
+  border: 1px solid #991b1b;
+  border-radius: 6px;
+  background: #fff;
+  color: #991b1b;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.stop-action:hover {
+  background: rgba(200, 50, 50, 0.08);
+}
+
 /* Progress detail grid */
 .progress-detail {
   display: flex;
