@@ -186,7 +186,7 @@ export function App() {
       const seenVoiceIds = new Set<string>();
       const statuses: Record<string, string> = {};
 
-      const chaptersToAnalyze = book.chapters.filter(c => selectedChapters.has(c.id) && !analysis?.scriptPaths[c.id]);
+      const chaptersToAnalyze = book.chapters.filter(c => selectedChapters.has(c.id));
       for (let i = 0; i < chaptersToAnalyze.length; i++) {
         if (controller.signal.aborted) break;
         const chapter = chaptersToAnalyze[i];
@@ -506,7 +506,7 @@ export function App() {
             Stop
           </button>
         )}
-        {book && !analysis && rights?.classification !== "blocked" && (
+        {book && rights?.classification !== "blocked" && (
           <button
             className="primary-action"
             type="button"
@@ -514,7 +514,7 @@ export function App() {
             disabled={stage === "analyzing" || (rights?.requiresAttestation && !rightsAttested)}
             style={{ marginTop: 8 }}
           >
-            {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : `Analyze${analysis ? " Selected" : " Book"}${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
+            {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : `Analyze${analysis ? "" : " Book"}${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
           </button>
         )}
         {analysis && (
@@ -528,7 +528,7 @@ export function App() {
             {stage === "saving" ? "Saving..." : "Save Corrections"}
           </button>
         )}
-        {correctionState.savedCorrections && (
+        {analysis && Object.keys(analysis.scriptPaths).length > 0 && (
           <button
             className="primary-action"
             type="button"
@@ -536,7 +536,7 @@ export function App() {
             disabled={stage === "generating"}
             style={{ marginTop: 8 }}
           >
-            {stage === "generating" ? "Generating..." : `Generate${correctionState.savedCorrections ? " Affected" : ""} Chapters${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
+            {stage === "generating" ? "Generating..." : `Generate Chapters${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
           </button>
         )}
         <nav aria-label="Workflow">
