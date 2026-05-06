@@ -342,3 +342,36 @@ article select {
   font-size: 0.75rem;
   color: #475569;
 }
+
+.analyze-progress {
+  font-size: 0.875rem;
+  color: #435160;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.chapter-failed {
+  color: #991b1b;
+  text-decoration: line-through;
+}
+
+/* Progress detail grid */
+.progress-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #dfe5ec;
+}
+
+.progress-detail-item {
+  font-size: 0.75rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.progress-detail-item strong {
+  color: #435160;
+  margin-right: 4px;
+}

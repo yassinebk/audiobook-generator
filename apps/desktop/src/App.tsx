@@ -81,6 +81,9 @@ export function App() {
   const [rights, setRights] = useState<RightsResult | null>(null);
   const [rightsAttested, setRightsAttested] = useState(false);
   const [useLlm, setUseLlm] = useState(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState<string>("");
+  const [chapterStatuses, setChapterStatuses] = useState<Record<string, string>>({});
+  const [progressDetail, setProgressDetail] = useState<Array<{ label: string; value: string }>>([]);
 
   const correctionState = useSyncExternalStore(
     correctionsStore.subscribe,
@@ -101,6 +104,9 @@ export function App() {
     setRights(null);
     setRightsAttested(false);
     correctionsStore.reset();
+    setAnalyzeProgress("");
+    setChapterStatuses({});
+    setProgressDetail([]);
 
     try {
       const tmp = await tempDir();
@@ -156,6 +162,15 @@ export function App() {
     setStage("analyzing");
     setError(null);
     setSavedMessage(null);
+    setAnalyzeProgress("Starting analysis...");
+    setChapterStatuses({});
+    setProgressDetail([
+      { label: "Model", value: useLlm ? "DeepSeek Flash" : "Heuristics (offline)" },
+      { label: "Chapters", value: String(book.chapters.length) },
+    ]);
+    const startTime = Date.now();
+
+    const modelLabel = useLlm ? "DeepSeek Flash" : "heuristics";
 
     try {
       const scriptDir = `${book.workDir}/scripts`;
@@ -164,53 +179,76 @@ export function App() {
       const allVoices: VoiceMeta[] = [];
       const seenIds = new Set<string>();
       const seenVoiceIds = new Set<string>();
+      const statuses: Record<string, string> = {};
 
       for (let i = 0; i < book.chapters.length; i++) {
         const chapter = book.chapters[i];
-        setProgress(10 + Math.round((i / book.chapters.length) * 30));
+        setProgress(10 + Math.round((i / book.chapters.length) * 25));
+        setAnalyzeProgress(`Analyzing chapter ${i + 1} of ${book.chapters.length} using ${modelLabel}...`);
+        setProgressDetail([
+          { label: "Model", value: modelLabel },
+          { label: "Progress", value: `Chapter ${i + 1} of ${book.chapters.length}` },
+          { label: "Current", value: chapter.title.length > 30 ? chapter.title.slice(0, 30) + "..." : chapter.title },
+          { label: "Elapsed", value: `${Math.round((Date.now() - startTime) / 1000)}s` },
+        ]);
+        statuses[chapter.id] = "analyzing";
+        setChapterStatuses({ ...statuses });
 
-        const result = await workerCall("analyze_chapter", {
-          bookId: book.bookId,
-          chapterId: chapter.id,
-          title: chapter.title,
-          chapterTextPath: chapter.textPath,
-          outputDirectory: scriptDir,
-          mockLlm: !useLlm,
-        });
+        try {
+          const result = await workerCall("analyze_chapter", {
+            bookId: book.bookId,
+            chapterId: chapter.id,
+            title: chapter.title,
+            chapterTextPath: chapter.textPath,
+            outputDirectory: scriptDir,
+            mockLlm: !useLlm,
+          });
 
-        if (result.status !== "succeeded") continue;
+          if (result.status !== "succeeded") {
+            statuses[chapter.id] = "failed";
+            setChapterStatuses({ ...statuses });
+            continue;
+          }
 
-        const artifact = (result.artifacts as Array<{ path: string }>)[0];
-        scripts[chapter.id] = artifact.path;
+          const artifact = (result.artifacts as Array<{ path: string }>)[0];
+          scripts[chapter.id] = artifact.path;
+          statuses[chapter.id] = "done";
 
-        const scriptRaw = await invoke<string>("run_worker", {
-          command: "_read_file",
-          inputJson: JSON.stringify({ path: artifact.path }),
-        }).catch(() => "{}");
-        const scriptData = JSON.parse(scriptRaw) as {
-          characters?: CharacterMeta[];
-          voices?: VoiceMeta[];
-        } | null;
+          const scriptRaw = await invoke<string>("run_worker", {
+            command: "_read_file",
+            inputJson: JSON.stringify({ path: artifact.path }),
+          }).catch(() => "{}");
+          const scriptData = JSON.parse(scriptRaw) as {
+            characters?: CharacterMeta[];
+            voices?: VoiceMeta[];
+          } | null;
 
-        if (scriptData?.voices) {
-          for (const v of scriptData.voices) {
-            if (!seenVoiceIds.has(v.id)) {
-              seenVoiceIds.add(v.id);
-              allVoices.push(v);
+          if (scriptData?.voices) {
+            for (const v of scriptData.voices) {
+              if (!seenVoiceIds.has(v.id)) {
+                seenVoiceIds.add(v.id);
+                allVoices.push(v);
+              }
             }
           }
-        }
 
-        if (scriptData?.characters) {
-          for (const c of scriptData.characters) {
-            if (!seenIds.has(c.id)) {
-              seenIds.add(c.id);
-              allCharacters.push(c);
+          if (scriptData?.characters) {
+            for (const c of scriptData.characters) {
+              if (!seenIds.has(c.id)) {
+                seenIds.add(c.id);
+                allCharacters.push(c);
+              }
             }
           }
+        } catch {
+          statuses[chapter.id] = "failed";
         }
+
+        setChapterStatuses({ ...statuses });
       }
 
+      const doneCount = Object.values(statuses).filter(s => s === "done").length;
+      setAnalyzeProgress(`Analysis complete: ${doneCount} of ${book.chapters.length} chapters analyzed.`);
       setAnalysis({ characters: allCharacters, voices: allVoices, scriptPaths: scripts });
       setProgress(40);
       setStage("idle");
@@ -295,6 +333,14 @@ export function App() {
     if (!book || !analysis) return;
     setStage("generating");
     setError(null);
+    setAnalyzeProgress("");
+    setProgressDetail([
+      { label: "Backend", value: "Parler TTS (MPS)" },
+      { label: "Chapters", value: String(chaptersToGenerate.length) },
+    ]);
+    const startTime = Date.now();
+    let totalSegments = 0;
+    let doneSegments = 0;
 
     const chaptersToGenerate = correctionState.affectedChapters.length > 0
       ? book.chapters.filter((c) => correctionState.affectedChapters.includes(c.id))
@@ -314,17 +360,35 @@ export function App() {
           command: "_read_file",
           inputJson: JSON.stringify({ path: scriptPath }),
         }).catch(() => "{}");
-        const script = JSON.parse(scriptRaw) as { segments?: Array<{ id: string }> };
+        const script = JSON.parse(scriptRaw) as { segments?: Array<{ id: string; voiceId?: string; emotion?: string }> };
         const segments = script.segments ?? [];
 
+        setAnalyzeProgress(`Synthesizing chapter ${ci + 1} of ${chaptersToGenerate.length} (${segments.length} segments)...`);
+        totalSegments += segments.length;
+
         for (let i = 0; i < segments.length; i++) {
-          setProgress(40 + Math.round(((ci * segments.length + i) / (chaptersToGenerate.length * segments.length)) * 50));
-          await workerCall("synthesize_segment_audio", {
-            scriptPath,
-            segmentId: segments[i].id,
-            outputDirectory: segDir,
-            backend: "parler",
-          });
+          setProgress(40 + Math.round(((doneSegments + i) / Math.max(totalSegments, 1)) * 50));
+          if (segments[i]) {
+            setProgressDetail([
+              { label: "Backend", value: "Parler TTS (MPS)" },
+              { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
+              { label: "Segment", value: `${i + 1} of ${segments.length}` },
+              { label: "Voice", value: segments[i].voiceId || "—" },
+              { label: "Emotion", value: segments[i].emotion || "neutral" },
+              { label: "Elapsed", value: `${Math.round((Date.now() - startTime) / 1000)}s` },
+            ]);
+          }
+          try {
+            await workerCall("synthesize_segment_audio", {
+              scriptPath,
+              segmentId: segments[i].id,
+              outputDirectory: segDir,
+              backend: "parler",
+            });
+          } catch {
+            // Individual segment failure doesn't stop the chapter
+          }
+          doneSegments++;
         }
 
         const result = await workerCall("assemble_chapter_audio", {
@@ -339,6 +403,7 @@ export function App() {
 
       if (generatedPath) setAudioPath(generatedPath);
       setProgress(100);
+      setAnalyzeProgress("Audio generation complete.");
       setStage("done");
     } catch (err) {
       setError(String(err));
@@ -389,14 +454,21 @@ export function App() {
           </button>
         )}
         {book && (
-          <label className="llm-toggle" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: "0.875rem" }}>
-            <input
-              type="checkbox"
-              checked={useLlm}
-              onChange={(e) => setUseLlm(e.target.checked)}
-            />
-            <span>Use LLM (slower, accurate)</span>
-          </label>
+          <div style={{ marginTop: 12 }}>
+            <label className="llm-toggle" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem" }}>
+              <input
+                type="checkbox"
+                checked={useLlm}
+                onChange={(e) => setUseLlm(e.target.checked)}
+              />
+              <span>Use LLM analysis</span>
+            </label>
+            {useLlm && (
+              <p style={{ margin: "4px 0 0 24px", fontSize: "0.75rem", color: "#66717f" }}>
+                DeepSeek Flash · character & emotion detection
+              </p>
+            )}
+          </div>
         )}
         {analysis && (
           <button
@@ -444,19 +516,33 @@ export function App() {
             <div>
               <strong>Error</strong>
               <p>{error}</p>
+              <button className="secondary-action" type="button" onClick={() => setStage("idle")} style={{ marginTop: 8, width: "auto", padding: "6px 14px" }}>
+                Dismiss
+              </button>
             </div>
           ) : stage === "done" ? (
             <div>
               <strong>Done!</strong>
-              <p>Chapter audio saved to: {audioPath}</p>
+              <p>{analyzeProgress || "Chapter audio generated."}</p>
+              {audioPath && <p><code className="export-path">{audioPath}</code></p>}
             </div>
           ) : book ? (
             <div>
               <strong>{book.title}</strong>
               <p>
-                {book.chapters.length} chapter{book.chapters.length !== 1 ? "s" : ""} detected.
-                {analysis ? ` ${analysis.characters.length} character${analysis.characters.length !== 1 ? "s" : ""} identified.` : ""}
+                {book.chapters.length} chapter{book.chapters.length !== 1 ? "s" : ""}
+                {analysis ? ` · ${analysis.characters.length} character${analysis.characters.length !== 1 ? "s" : ""}` : ""}
               </p>
+              {analyzeProgress && <p className="analyze-progress">{analyzeProgress}</p>}
+              {progressDetail.length > 0 && stage !== "idle" && (
+                <div className="progress-detail">
+                  {progressDetail.map((d) => (
+                    <span key={d.label} className="progress-detail-item">
+                      <strong>{d.label}</strong> {d.value}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -488,8 +574,10 @@ export function App() {
               <ul>
                 {book.chapters.slice(0, 10).map((c) => (
                   <li key={c.id}>
-                    {c.title}
-                    {analysis?.scriptPaths[c.id] ? " ✓" : ""}
+                    <span className={!analysis?.scriptPaths[c.id] && chapterStatuses[c.id] === "failed" ? "chapter-failed" : ""}>
+                      {c.title}
+                    </span>
+                    {analysis?.scriptPaths[c.id] ? " ✓" : chapterStatuses[c.id] === "analyzing" ? " ⏳" : chapterStatuses[c.id] === "failed" ? " ✗" : ""}
                     {correctionState.affectedChapters.includes(c.id) ? " (pending regeneration)" : ""}
                     <small> ({Math.round(c.textLength / 1000)}k chars)</small>
                   </li>
