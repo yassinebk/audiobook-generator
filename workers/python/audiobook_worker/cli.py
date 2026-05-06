@@ -84,6 +84,8 @@ def _dispatch(command: str, request: dict[str, Any]) -> dict[str, Any]:
         return _analyze_chapter(request)
     if command == "synthesize_segment_audio":
         return _synthesize_segment_audio(request)
+    if command == "synthesize_chapter_audio":
+        return _synthesize_chapter_audio(request)
     if command == "assemble_chapter_audio":
         return _assemble_chapter_audio(request)
     if command == "apply_corrections":
@@ -192,6 +194,27 @@ def _synthesize_segment_audio(request: dict[str, Any]) -> dict[str, Any]:
             }
         ],
     )
+
+
+def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
+    script = json.loads(Path(request["scriptPath"]).read_text(encoding="utf-8"))
+    segments = script["segments"]
+    output_directory = Path(request["outputDirectory"])
+    output_directory.mkdir(parents=True, exist_ok=True)
+    backend_name = request.get("backend", "mock")
+    if backend_name == "parler":
+        backend = ParlerTTSBackend()
+    else:
+        backend = MockTTSBackend()
+    artifacts = []
+    for segment in segments:
+        artifact = backend.synthesize_segment(segment, output_directory)
+        artifacts.append({
+            "kind": artifact.kind,
+            "path": str(artifact.path),
+            "metadata": {"durationSeconds": artifact.duration_seconds},
+        })
+    return _response("succeeded", artifacts=artifacts)
 
 
 def _assemble_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:

@@ -384,49 +384,25 @@ export function App() {
         const segDir = `${book.workDir}/segments/${chapter.id}`;
         const assembledPath = `${book.workDir}/audio/${chapter.id}.wav`;
 
-        const scriptRaw = await invoke<string>("run_worker", {
-          command: "_read_file",
-          inputJson: JSON.stringify({ path: scriptPath }),
-        }).catch(() => "{}");
+        setAnalyzeProgress(`Synthesizing chapter ${ci + 1} of ${chaptersToGenerate.length}...`);
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        flushSync(() => {
+          setProgress(40 + Math.round((ci / chaptersToGenerate.length) * 50));
+          setProgressDetail([
+            { label: "Backend", value: "Parler TTS (MPS)" },
+            { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
+            { label: "Elapsed", value: `${elapsed}s` },
+          ]);
+        });
 
-        const script = JSON.parse(scriptRaw) as {
-          segments?: Array<{ id: string; voiceId?: string; emotion?: string }>;
-        };
-        const segments = script.segments ?? [];
-
-        setAnalyzeProgress(
-          `Synthesizing chapter ${ci + 1} of ${chaptersToGenerate.length} (${segments.length} segments)...`,
-        );
-        totalSegments += segments.length;
-
-        for (let i = 0; i < segments.length; i++) {
-          if (controller.signal.aborted) break;
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          const avgPerSeg = doneSegments > 0 ? elapsed / doneSegments : 8;
-          const remaining = Math.round(avgPerSeg * (totalSegments - doneSegments));
-          flushSync(() => {
-            setProgress(40 + Math.round(((doneSegments + i) / Math.max(totalSegments, 1)) * 50));
-            setProgressDetail([
-              { label: "Backend", value: "Parler TTS (MPS)" },
-              { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
-              { label: "Segment", value: `${i + 1} of ${segments.length}` },
-              { label: "Voice", value: segments[i].voiceId ?? "—" },
-              { label: "Emotion", value: segments[i].emotion ?? "neutral" },
-              { label: "Elapsed", value: `${elapsed}s` },
-              { label: "ETA", value: `~${remaining}s` },
-            ]);
+        try {
+          await workerCall("synthesize_chapter_audio", {
+            scriptPath,
+            outputDirectory: segDir,
+            backend: "parler",
           });
-          try {
-            await workerCall("synthesize_segment_audio", {
-              scriptPath,
-              segmentId: segments[i].id,
-              outputDirectory: segDir,
-              backend: "parler",
-            });
-          } catch {
-            // segment failure is non-fatal
-          }
-          doneSegments++;
+        } catch {
+          // chapter synthesis failure is non-fatal
         }
 
         const result = await workerCall("assemble_chapter_audio", {
