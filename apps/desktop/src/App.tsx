@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { tempDir } from "@tauri-apps/api/path";
 
 import type {
@@ -15,6 +15,7 @@ import type {
   WorkspaceStep,
 } from "./types";
 import { workerCall } from "./lib/workerCall";
+import { synthesizeChapter } from "./lib/generation";
 import { createCorrectionsStore } from "./state/corrections";
 import { Sidebar } from "./components/Sidebar";
 import { Step1Import } from "./components/steps/Step1Import";
@@ -380,21 +381,13 @@ export function App() {
     }
   }
 
-  async function handleGenerate() {
+  async function generateChapters(chaptersToGenerate: ChapterMeta[]) {
     if (!book || !analysis) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setStage("generating");
     setError(null);
     setAnalyzeProgress("");
-
-    const chaptersToGenerate = (
-      correctionState.affectedChapters.length > 0
-        ? book.chapters.filter((c) =>
-            correctionState.affectedChapters.includes(c.id),
-          )
-        : book.chapters
-    ).filter((c) => selectedChapters.has(c.id) && analysis.scriptPaths[c.id]);
 
     setProgressDetail([
       { label: "Backend", value: "Parler TTS (MPS)" },
@@ -432,40 +425,26 @@ export function App() {
         );
         totalSegments += segments.length;
 
-        for (let i = 0; i < segments.length; i++) {
-          if (controller.signal.aborted) break;
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          const avgPerSeg = doneSegments > 0 ? elapsed / doneSegments : 8;
-          const remaining = Math.round(avgPerSeg * (totalSegments - doneSegments));
-          flushSync(() => {
-            setProgress(40 + Math.round(((doneSegments + i) / Math.max(totalSegments, 1)) * 50));
-            setProgressDetail([
-              { label: "Backend", value: "Parler TTS (MPS)" },
-              { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
-              { label: "Segment", value: `${i + 1} of ${segments.length}` },
-              { label: "Voice", value: segments[i].voiceId ?? "—" },
-              { label: "Emotion", value: segments[i].emotion ?? "neutral" },
-              { label: "Elapsed", value: `${elapsed}s` },
-              { label: "ETA", value: `~${remaining}s` },
-            ]);
-          });
-          try {
-            await workerCall("synthesize_segment_audio", {
-              scriptPath,
-              segmentId: segments[i].id,
-              outputDirectory: segDir,
-              backend: "parler",
-            });
-          } catch {
-            // segment failure is non-fatal
-          }
-          doneSegments++;
-        }
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const avgPerSeg = doneSegments > 0 ? elapsed / doneSegments : 8;
+        const remaining = Math.round(avgPerSeg * (totalSegments - doneSegments));
+        flushSync(() => {
+          setProgress(40 + Math.round((doneSegments / Math.max(totalSegments, 1)) * 50));
+          setProgressDetail([
+            { label: "Backend", value: "Parler TTS (MPS)" },
+            { label: "Chapter", value: `${ci + 1} of ${chaptersToGenerate.length}` },
+            { label: "Segments", value: String(segments.length) },
+            { label: "Elapsed", value: `${elapsed}s` },
+            { label: "ETA", value: `~${remaining}s` },
+          ]);
+        });
 
-        const result = await workerCall("assemble_chapter_audio", {
+        const result = await synthesizeChapter({
+          scriptPath,
           segmentAudioDirectory: segDir,
           outputPath: assembledPath,
         });
+        doneSegments += segments.length;
 
         if (result.status === "succeeded") {
           newAudioPaths[chapter.id] = assembledPath;
@@ -496,6 +475,29 @@ export function App() {
     }
   }
 
+  async function handleGenerate() {
+    if (!book || !analysis) return;
+    const chaptersToGenerate = (
+      correctionState.affectedChapters.length > 0
+        ? book.chapters.filter((c) =>
+            correctionState.affectedChapters.includes(c.id),
+          )
+        : book.chapters
+    ).filter((c) => selectedChapters.has(c.id) && analysis.scriptPaths[c.id]);
+
+    await generateChapters(chaptersToGenerate);
+  }
+
+  async function handleRegenerateChapter(chapter: ChapterMeta) {
+    await generateChapters([chapter]);
+  }
+
+  async function handleRegenerateAll() {
+    if (!book) return;
+    const generatedChapters = book.chapters.filter((c) => chapterAudioPaths[c.id]);
+    await generateChapters(generatedChapters);
+  }
+
   const handleGenderChange = useCallback((characterId: string, gender: string) => {
     correctionsStore.setGender(characterId, gender);
     setSavedMessage(null);
@@ -503,8 +505,63 @@ export function App() {
 
   const handleVoiceChange = useCallback((characterId: string, voiceId: string) => {
     correctionsStore.setVoice(characterId, voiceId);
+    setAnalysis((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        characters: current.characters.map((character) =>
+          character.id === characterId ? { ...character, voiceId } : character,
+        ),
+      };
+    });
     setSavedMessage(null);
   }, []);
+
+  async function handlePreviewVoice(voiceId: string) {
+    if (!book) return;
+    try {
+      setSavedMessage(`Generating ${voiceId} preview...`);
+      const previewDir = `${book.workDir}/voice-previews`;
+      const scriptPath = `${previewDir}/${voiceId}.json`;
+      const script = {
+        bookId: book.bookId,
+        chapterId: "voice_preview",
+        segments: [
+          {
+            id: `preview_${voiceId}`,
+            text: "This is a voice preview.",
+            voiceId,
+            emotion: "neutral",
+            intensity: 0.2,
+            pace: "normal",
+          },
+        ],
+      };
+
+      await workerCall("_write_file", {
+        path: scriptPath,
+        content: JSON.stringify(script),
+      });
+      const result = await workerCall("synthesize_segment_audio", {
+        scriptPath,
+        segmentId: `preview_${voiceId}`,
+        outputDirectory: previewDir,
+        backend: "parler",
+      });
+
+      if (result.status !== "succeeded") {
+        const err = result.error as { message: string } | undefined;
+        throw new Error(err?.message ?? "voice preview failed");
+      }
+
+      const artifact = (result.artifacts as Array<{ path: string }>)[0];
+      await new Audio(convertFileSrc(artifact.path)).play();
+      setSavedMessage(`Playing ${voiceId} preview.`);
+    } catch (err) {
+      setError(String(err));
+      setStage("error");
+    }
+  }
 
   function toggleChapter(chapterId: string) {
     setSelectedChapters((prev) => {
@@ -609,6 +666,7 @@ export function App() {
             onContinue={() => setCurrentStep(4)}
             onGenderChange={handleGenderChange}
             onVoiceChange={handleVoiceChange}
+            onPreviewVoice={handlePreviewVoice}
           />
         )}
         {currentStep === 4 && book && analysis && (
@@ -633,7 +691,10 @@ export function App() {
             chapterAudioPaths={chapterAudioPaths}
             analysis={analysis}
             savedMessage={savedMessage}
+            isBusy={isBusy}
             onSaveChapter={handleSaveChapter}
+            onRegenerateChapter={handleRegenerateChapter}
+            onRegenerateAll={handleRegenerateAll}
           />
         )}
       </section>

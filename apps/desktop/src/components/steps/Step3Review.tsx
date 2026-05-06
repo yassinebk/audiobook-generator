@@ -13,6 +13,7 @@ interface Step3ReviewProps {
   onContinue: () => void;
   onGenderChange: (characterId: string, gender: string) => void;
   onVoiceChange: (characterId: string, voiceId: string) => void;
+  onPreviewVoice: (voiceId: string) => void;
 }
 
 export function Step3Review({
@@ -26,6 +27,7 @@ export function Step3Review({
   onContinue,
   onGenderChange,
   onVoiceChange,
+  onPreviewVoice,
 }: Step3ReviewProps) {
   return (
     <div className="step-workspace visible" aria-label="Step 3: Review">
@@ -45,6 +47,7 @@ export function Step3Review({
             voices={voices}
             onGenderChange={onGenderChange}
             onVoiceChange={onVoiceChange}
+            onPreviewVoice={onPreviewVoice}
           />
           {correctionState.dirty && (
             <p className="hint">Unsaved corrections — save before generating.</p>

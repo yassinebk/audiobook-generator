@@ -1,7 +1,44 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from audiobook_worker.tts import MockTTSBackend, voice_registry
+from audiobook_worker.tts import MockTTSBackend, _select_torch_device, voice_registry
+
+
+def test_select_torch_device_prefers_mps_when_available():
+    class FakeTorch:
+        class backends:
+            class mps:
+                @staticmethod
+                def is_available():
+                    return True
+
+        class cuda:
+            @staticmethod
+            def is_available():
+                return True
+
+    assert _select_torch_device(FakeTorch, "auto") == "mps"
+
+
+def test_select_torch_device_errors_when_requested_gpu_is_unavailable():
+    class FakeTorch:
+        class backends:
+            class mps:
+                @staticmethod
+                def is_available():
+                    return False
+
+        class cuda:
+            @staticmethod
+            def is_available():
+                return False
+
+    try:
+        _select_torch_device(FakeTorch, "mps")
+    except RuntimeError as error:
+        assert "MPS was requested" in str(error)
+    else:
+        raise AssertionError("expected RuntimeError")
 
 
 def test_mock_backend_generates_segment_audio_artifact(tmp_path: Path):
@@ -108,4 +145,3 @@ def test_parler_backend_builds_description_with_emotion(tmp_path: Path):
 
     first_call_args = mock_tokenizer.call_args_list[0][0][0]
     assert "angry" in first_call_args.lower() or "forceful" in first_call_args.lower()
-

@@ -99,6 +99,8 @@ async fn run_worker(command: String, input_json: String) -> Result<String, Strin
         let result = Command::new(&python)
             .args(["-m", "audiobook_worker.cli", &command, &input, &output])
             .current_dir(&worker_dir)
+            .env("AUDIOBOOK_TTS_DEVICE", "mps")
+            .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
             .output();
         let _ = tx.send(result);
     });

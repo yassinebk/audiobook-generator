@@ -83,6 +83,22 @@ describe("CharacterTable", () => {
     expect(onVoiceChange).toHaveBeenCalledWith("elizabeth", "male_adult_01");
   });
 
+  test("calls onPreviewVoice for the selected character voice", () => {
+    const onPreviewVoice = vi.fn();
+    render(
+      <CharacterTable
+        characters={sampleCharacters}
+        voices={VOICE_OPTIONS}
+        onGenderChange={() => {}}
+        onVoiceChange={() => {}}
+        onPreviewVoice={onPreviewVoice}
+      />
+    );
+
+    screen.getAllByRole("button", { name: /Preview voice/i })[0].click();
+    expect(onPreviewVoice).toHaveBeenCalledWith("female_adult_01");
+  });
+
   test("shows empty state message when no characters", () => {
     render(
       <CharacterTable

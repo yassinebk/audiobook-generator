@@ -6,7 +6,10 @@ interface StepDoneProps {
   chapterAudioPaths: Record<string, string>;
   analysis: AnalysisState | null;
   savedMessage: string | null;
+  isBusy: boolean;
   onSaveChapter: (chapter: ChapterMeta) => void;
+  onRegenerateChapter: (chapter: ChapterMeta) => void;
+  onRegenerateAll: () => void;
 }
 
 export function StepDone({
@@ -14,7 +17,10 @@ export function StepDone({
   chapterAudioPaths,
   analysis,
   savedMessage,
+  isBusy,
   onSaveChapter,
+  onRegenerateChapter,
+  onRegenerateAll,
 }: StepDoneProps) {
   const generatedChapters = book.chapters.filter((c) => chapterAudioPaths[c.id]);
 
@@ -43,6 +49,19 @@ export function StepDone({
         </div>
       </header>
 
+      {generatedChapters.length > 0 && (
+        <div className="listen-actions">
+          <button
+            className="btn-primary btn-sm"
+            type="button"
+            disabled={isBusy}
+            onClick={onRegenerateAll}
+          >
+            Regenerate all
+          </button>
+        </div>
+      )}
+
       <div className="chapter-audio-grid">
         {generatedChapters.map((chapter) => (
           <div className="chapter-audio-card" key={chapter.id}>
@@ -58,6 +77,15 @@ export function StepDone({
               onClick={() => onSaveChapter(chapter)}
             >
               Save…
+            </button>
+            <button
+              className="btn-secondary btn-sm"
+              type="button"
+              disabled={isBusy}
+              onClick={() => onRegenerateChapter(chapter)}
+              aria-label={`Regenerate chapter ${chapter.title}`}
+            >
+              Regenerate
             </button>
           </div>
         ))}

@@ -5,6 +5,7 @@ interface CharacterTableProps {
   voices: VoiceOption[];
   onGenderChange: (characterId: string, gender: string) => void;
   onVoiceChange: (characterId: string, voiceId: string) => void;
+  onPreviewVoice?: (voiceId: string) => void;
 }
 
 function confidenceColor(confidence: number): string {
@@ -18,6 +19,7 @@ export function CharacterTable({
   voices,
   onGenderChange,
   onVoiceChange,
+  onPreviewVoice,
 }: CharacterTableProps) {
   if (characters.length === 0) {
     return <p>No characters detected yet. Run analysis first.</p>;
@@ -72,18 +74,31 @@ export function CharacterTable({
               </select>
             </td>
             <td>
-              <select
-                className="dark-select"
-                aria-label="Voice"
-                value={c.voiceId}
-                onChange={(e) => onVoiceChange(c.id, e.target.value)}
-              >
-                {voices.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.displayName}
-                  </option>
-                ))}
-              </select>
+              <div className="voice-control">
+                <select
+                  className="dark-select"
+                  aria-label="Voice"
+                  value={c.voiceId}
+                  onChange={(e) => onVoiceChange(c.id, e.target.value)}
+                >
+                  {voices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.displayName}
+                    </option>
+                  ))}
+                </select>
+                {onPreviewVoice && (
+                  <button
+                    className="icon-btn"
+                    type="button"
+                    aria-label={`Preview voice ${c.voiceId}`}
+                    title="Preview voice"
+                    onClick={() => onPreviewVoice(c.voiceId)}
+                  >
+                    ▶
+                  </button>
+                )}
+              </div>
             </td>
           </tr>
         ))}

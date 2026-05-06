@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -117,12 +118,8 @@ class ParlerTTSBackend:
 
         import torch
 
-        if torch.backends.mps.is_available():
-            self._device = "mps"
-        elif torch.cuda.is_available():
-            self._device = "cuda"
-        else:
-            self._device = "cpu"
+        requested_device = os.environ.get("AUDIOBOOK_TTS_DEVICE", "auto")
+        self._device = _select_torch_device(torch, requested_device)
 
         dtype = torch.float16 if self._device in ("mps", "cuda") else torch.float32
         self._model = ParlerTTSForConditionalGeneration.from_pretrained(
@@ -167,6 +164,38 @@ class ParlerTTSBackend:
 
 def voice_registry() -> dict[str, dict]:
     return VOICE_REGISTRY.copy()
+
+
+def _select_torch_device(torch_module, requested_device: str = "auto") -> str:
+    requested = requested_device.strip().lower()
+    if requested not in {"auto", "mps", "cuda", "cpu"}:
+        raise ValueError(
+            "AUDIOBOOK_TTS_DEVICE must be one of: auto, mps, cuda, cpu"
+        )
+
+    mps_available = torch_module.backends.mps.is_available()
+    cuda_available = torch_module.cuda.is_available()
+
+    if requested == "mps":
+        if not mps_available:
+            raise RuntimeError(
+                "MPS was requested for TTS, but torch.backends.mps.is_available() is false."
+            )
+        return "mps"
+    if requested == "cuda":
+        if not cuda_available:
+            raise RuntimeError(
+                "CUDA was requested for TTS, but torch.cuda.is_available() is false."
+            )
+        return "cuda"
+    if requested == "cpu":
+        return "cpu"
+
+    if mps_available:
+        return "mps"
+    if cuda_available:
+        return "cuda"
+    return "cpu"
 
 
 def _duration_for_text(text: str) -> float:

@@ -214,7 +214,10 @@ def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
         artifacts.append({
             "kind": artifact.kind,
             "path": str(artifact.path),
-            "metadata": {"durationSeconds": artifact.duration_seconds},
+            "metadata": {
+                "durationSeconds": artifact.duration_seconds,
+                "device": getattr(backend, "_device", None),
+            },
         })
     return _response("succeeded", artifacts=artifacts)
 
