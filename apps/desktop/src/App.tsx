@@ -16,6 +16,11 @@ import type {
 } from "./types";
 import { workerCall } from "./lib/workerCall";
 import { synthesizeChapter } from "./lib/generation";
+import {
+  cachedBookFromExtraction,
+  extractionCachePath,
+  writeExtractionCache,
+} from "./lib/importCache";
 import { createCorrectionsStore } from "./state/corrections";
 import { Sidebar } from "./components/Sidebar";
 import { Step1Import } from "./components/steps/Step1Import";
@@ -92,35 +97,62 @@ export function App() {
       const bookStem =
         (path as string).split("/").pop()?.replace(/\.[^.]+$/, "") ?? "book";
       const workDir = `${tmp}/audiobook-generator/${bookStem}`;
+      const sourcePath = path as string;
 
-      const result = await workerCall("extract_book", {
-        bookPath: path,
-        outputDirectory: `${workDir}/chapters`,
+      let extracted = await cachedBookFromExtraction({
+        cachePath: extractionCachePath(workDir),
+        sourcePath,
+        readJson: async (cachePath) =>
+          await invoke<unknown>("run_worker", {
+            command: "_read_file",
+            inputJson: JSON.stringify({ path: cachePath }),
+          }),
       });
 
-      if (result.status !== "succeeded") {
-        const err = result.error as { message: string } | undefined;
-        throw new Error(err?.message ?? "extract_book failed");
+      if (extracted) {
+        setAnalyzeProgress("Restored cached book extraction.");
+      } else {
+        const result = await workerCall("extract_book", {
+          bookPath: path,
+          outputDirectory: `${workDir}/chapters`,
+        });
+
+        if (result.status !== "succeeded") {
+          const err = result.error as { message: string } | undefined;
+          throw new Error(err?.message ?? "extract_book failed");
+        }
+
+        const artifact = (
+          result.artifacts as Array<{
+            metadata: { title: string; chapters: ChapterMeta[] };
+          }>
+        )[0];
+
+        extracted = {
+          title: artifact.metadata.title,
+          bookId: bookStem,
+          workDir,
+          chapters: artifact.metadata.chapters,
+        };
+
+        await writeExtractionCache({
+          sourcePath,
+          book: extracted,
+          writeJson: async (cachePath, payload) => {
+            await workerCall("_write_file", {
+              path: cachePath,
+              content: JSON.stringify(payload),
+            });
+          },
+        });
       }
 
-      const artifact = (
-        result.artifacts as Array<{
-          metadata: { title: string; chapters: ChapterMeta[] };
-        }>
-      )[0];
-
-      const extracted: BookState = {
-        title: artifact.metadata.title,
-        bookId: bookStem,
-        workDir,
-        chapters: artifact.metadata.chapters,
-      };
       setBook(extracted);
       setSelectedChapters(new Set(extracted.chapters.map((c) => c.id)));
       setProgress(10);
 
       // Persist to DB
-      db.createBook({ id: extracted.bookId, title: extracted.title, sourcePath: path as string, workDir: extracted.workDir }).catch(() => {});
+      db.createBook({ id: extracted.bookId, title: extracted.title, sourcePath, workDir: extracted.workDir }).catch(() => {});
 
       // Restore previously analyzed chapters
       try {
