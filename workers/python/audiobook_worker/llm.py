@@ -288,6 +288,9 @@ def _resolved_model(
     model_entry: dict[str, Any],
     model_id: str,
 ) -> ResolvedModel:
+    prefix = f"{provider}/"
+    if model_id.startswith(prefix):
+        model_id = model_id[len(prefix):]
     return ResolvedModel(
         provider=provider,
         model_id=model_id,

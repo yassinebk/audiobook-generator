@@ -99,6 +99,8 @@ class ParlerTTSBackend:
         text = segment["text"]
 
         audio_array = self._generate(description, text)
+        if audio_array.dtype.name == "float16":
+            audio_array = audio_array.astype("float32")
 
         sf.write(str(output_path), audio_array, self._model.config.sampling_rate)
 
@@ -122,8 +124,9 @@ class ParlerTTSBackend:
         else:
             self._device = "cpu"
 
+        dtype = torch.float16 if self._device in ("mps", "cuda") else torch.float32
         self._model = ParlerTTSForConditionalGeneration.from_pretrained(
-            self._model_id
+            self._model_id, torch_dtype=dtype
         ).to(self._device)
         self._tokenizer = AutoTokenizer.from_pretrained(self._model_id)
 
