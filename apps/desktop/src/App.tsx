@@ -84,6 +84,7 @@ export function App() {
   const [chapterStatuses, setChapterStatuses] = useState<Record<string, string>>({});
   const [progressDetail, setProgressDetail] = useState<Array<{ label: string; value: string }>>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
 
   const correctionState = useSyncExternalStore(
     correctionsStore.subscribe,
@@ -131,6 +132,7 @@ export function App() {
         workDir,
         chapters: artifact.metadata.chapters,
       });
+      setSelectedChapters(new Set(artifact.metadata.chapters.map((c: ChapterMeta) => c.id)));
       setProgress(10);
 
       // Check rights
@@ -184,14 +186,15 @@ export function App() {
       const seenVoiceIds = new Set<string>();
       const statuses: Record<string, string> = {};
 
-      for (let i = 0; i < book.chapters.length; i++) {
+      const chaptersToAnalyze = book.chapters.filter(c => selectedChapters.has(c.id) && !analysis?.scriptPaths[c.id]);
+      for (let i = 0; i < chaptersToAnalyze.length; i++) {
         if (controller.signal.aborted) break;
-        const chapter = book.chapters[i];
-        setProgress(10 + Math.round((i / book.chapters.length) * 25));
-        setAnalyzeProgress(`Analyzing chapter ${i + 1} of ${book.chapters.length} using ${modelLabel}...`);
+        const chapter = chaptersToAnalyze[i];
+        setProgress(10 + Math.round((i / chaptersToAnalyze.length) * 25));
+        setAnalyzeProgress(`Analyzing chapter ${i + 1} of ${chaptersToAnalyze.length} using ${modelLabel}...`);
         setProgressDetail([
           { label: "Model", value: modelLabel },
-          { label: "Progress", value: `Chapter ${i + 1} of ${book.chapters.length}` },
+          { label: "Progress", value: `Chapter ${i + 1} of ${chaptersToAnalyze.length}` },
           { label: "Current", value: chapter.title.length > 30 ? chapter.title.slice(0, 30) + "..." : chapter.title },
           { label: "Elapsed", value: `${Math.round((Date.now() - startTime) / 1000)}s` },
         ]);
@@ -256,7 +259,7 @@ export function App() {
         setAnalysis({ characters: allCharacters, voices: allVoices, scriptPaths: scripts });
       }
       setAnalyzeProgress(wasStopped
-        ? `Stopped after ${doneCount} of ${book.chapters.length} chapters. ${doneCount > 0 ? "You can generate audio for completed chapters." : ""}`
+        ? `Stopped after ${doneCount} of ${chaptersToAnalyze.length} chapters. ${doneCount > 0 ? "You can generate audio for completed chapters." : ""}`
         : `Analysis complete: ${doneCount} of ${book.chapters.length} chapters analyzed.`);
       setProgress(wasStopped ? 40 : 40);
       setStage("idle");
@@ -358,9 +361,9 @@ export function App() {
     let totalSegments = 0;
     let doneSegments = 0;
 
-    const chaptersToGenerate = correctionState.affectedChapters.length > 0
+    const chaptersToGenerate = (correctionState.affectedChapters.length > 0
       ? book.chapters.filter((c) => correctionState.affectedChapters.includes(c.id))
-      : book.chapters;
+      : book.chapters).filter(c => selectedChapters.has(c.id) && analysis.scriptPaths[c.id]);
 
     try {
       let generatedPath: string | null = null;
@@ -447,10 +450,25 @@ export function App() {
     setSavedMessage(null);
   }, []);
 
-  function handleStop() {
-    abortRef.current?.abort();
-    setAnalyzeProgress("Stopping...");
+  function toggleChapter(chapterId: string) {
+    setSelectedChapters(prev => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) next.delete(chapterId);
+      else next.add(chapterId);
+      return next;
+    });
   }
+
+  function toggleAllChapters() {
+    if (!book) return;
+    setSelectedChapters(prev => {
+      const allSelected = book.chapters.length > 0 && book.chapters.every(c => prev.has(c.id));
+      if (allSelected) return new Set();
+      return new Set(book.chapters.map(c => c.id));
+    });
+  }
+
+  const allChaptersSelected = book ? book.chapters.length > 0 && book.chapters.every(c => selectedChapters.has(c.id)) : false;
 
   const isBusy = stage === "importing" || stage === "analyzing" || stage === "saving" || stage === "generating";
 
@@ -491,7 +509,7 @@ export function App() {
             disabled={stage === "analyzing" || (rights?.requiresAttestation && !rightsAttested)}
             style={{ marginTop: 8 }}
           >
-            {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : "Analyze Book"}
+            {stage === "analyzing" ? "Analyzing..." : rights?.requiresAttestation && !rightsAttested ? "Attest rights first" : `Analyze${analysis ? " Selected" : " Book"}${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
           </button>
         )}
         {analysis && (
@@ -513,7 +531,7 @@ export function App() {
             disabled={stage === "generating"}
             style={{ marginTop: 8 }}
           >
-            {stage === "generating" ? "Generating..." : "Regenerate Affected Chapters"}
+            {stage === "generating" ? "Generating..." : `Generate${correctionState.savedCorrections ? " Affected" : ""} Chapters${selectedChapters.size < (book?.chapters.length || 0) ? ` (${selectedChapters.size})` : ""}`}
           </button>
         )}
         <nav aria-label="Workflow">
@@ -595,19 +613,38 @@ export function App() {
           <article>
             <h3>Chapters</h3>
             {book && book.chapters.length > 0 ? (
-              <ul>
-                {book.chapters.slice(0, 10).map((c) => (
-                  <li key={c.id}>
-                    <span className={!analysis?.scriptPaths[c.id] && chapterStatuses[c.id] === "failed" ? "chapter-failed" : ""}>
-                      {c.title}
-                    </span>
-                    {analysis?.scriptPaths[c.id] ? " ✓" : chapterStatuses[c.id] === "analyzing" ? " ⏳" : chapterStatuses[c.id] === "failed" ? " ✗" : ""}
-                    {correctionState.affectedChapters.includes(c.id) ? " (pending regeneration)" : ""}
-                    <small> ({Math.round(c.textLength / 1000)}k chars)</small>
-                  </li>
-                ))}
-                {book.chapters.length > 10 && <li>...and {book.chapters.length - 10} more</li>}
-              </ul>
+              <>
+                <label className="select-all" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", marginBottom: 8, color: "#435160" }}>
+                  <input
+                    type="checkbox"
+                    checked={allChaptersSelected}
+                    onChange={toggleAllChapters}
+                    disabled={isBusy}
+                  />
+                  {allChaptersSelected ? "Deselect all" : "Select all"} · {selectedChapters.size}/{book.chapters.length}
+                </label>
+                <ul className="chapter-list">
+                  {book.chapters.slice(0, 10).map((c) => (
+                    <li key={c.id} className={!analysis?.scriptPaths[c.id] && chapterStatuses[c.id] === "failed" ? "chapter-failed" : ""}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedChapters.has(c.id)}
+                          onChange={() => toggleChapter(c.id)}
+                          disabled={isBusy}
+                        />
+                        <span>
+                          {c.title}
+                          {analysis?.scriptPaths[c.id] ? " ✓" : chapterStatuses[c.id] === "analyzing" ? " ⏳" : chapterStatuses[c.id] === "failed" ? " ✗" : ""}
+                          {correctionState.affectedChapters.includes(c.id) ? " (pending regeneration)" : ""}
+                          <small> ({Math.round(c.textLength / 1000)}k chars)</small>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                  {book.chapters.length > 10 && <li>...and {book.chapters.length - 10} more</li>}
+                </ul>
+              </>
             ) : (
               <p>Chapter scripts and generation state will be listed as the worker pipeline runs.</p>
             )}

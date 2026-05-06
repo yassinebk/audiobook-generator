@@ -371,6 +371,28 @@ article select {
   background: rgba(200, 50, 50, 0.08);
 }
 
+/* Chapter list */
+.chapter-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chapter-list li {
+  padding: 4px 0;
+  font-size: 0.875rem;
+}
+
+.chapter-list label {
+  margin-top: 0;
+}
+
+.select-all input,
+.chapter-list input {
+  min-height: auto;
+  margin: 0;
+}
+
 /* Progress detail grid */
 .progress-detail {
   display: flex;
