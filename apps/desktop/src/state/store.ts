@@ -113,6 +113,7 @@ export function createAudiobookStore(path: string) {
         INSERT OR REPLACE INTO books (id, title, source_path, source_language, output_language, work_dir)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(record.id, record.title, record.sourcePath, record.sourceLanguage, record.outputLanguage, (record as any).workDir ?? "");
+    },
 
     getBook(id: string) {
       const row = db.prepare("SELECT * FROM books WHERE id = ?").get(id) as BookRow | undefined;
