@@ -48,13 +48,6 @@ async fn run_worker(command: String, input_json: String) -> Result<String, Strin
     ))
 }
 
-    Err(format!(
-        "Worker exited {:?}: {}",
-        result.status.code(),
-        String::from_utf8_lossy(&result.stderr)
-    ))
-}
-
 #[tauri::command]
 fn copy_file(from: String, to: String) -> Result<String, String> {
     std::fs::copy(&from, &to).map_err(|e| e.to_string())?;
