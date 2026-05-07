@@ -32,6 +32,11 @@ interface UseChapterAnalysisDeps {
       status: string;
       scriptPath?: string;
     }) => Promise<unknown>;
+    upsertCharacter: (record: {
+      id: string; bookId: string; canonicalName: string;
+      gender?: string | null; voiceId?: string | null;
+      confidence?: number; aliases?: string;
+    }) => Promise<unknown>;
   };
 }
 
@@ -157,6 +162,15 @@ export function useChapterAnalysis(deps: UseChapterAnalysisDeps) {
             if (!seenCharIds.has(c.id)) {
               seenCharIds.add(c.id);
               allCharacters.push(c);
+              db.upsertCharacter({
+                id: c.id,
+                bookId: book.bookId,
+                canonicalName: c.canonicalName,
+                gender: c.gender,
+                voiceId: c.voiceId,
+                confidence: c.confidence,
+                aliases: JSON.stringify(c.aliases),
+              }).catch(() => {});
             }
           }
         } catch {
