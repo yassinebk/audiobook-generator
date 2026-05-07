@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { tempDir } from "@tauri-apps/api/path";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppView, BookState, LibraryBook } from "./types";
 import { LibraryView } from "./components/LibraryView";
@@ -69,10 +68,9 @@ export function App() {
     // New import flow
     setImportError(null);
     try {
-      const tmp = await tempDir();
       const bookStem = getBookStem(sourcePath);
       const bookId = `${bookStem}_${Date.now()}`;
-      const workDir = `${tmp}/audiobook-generator/${bookStem}`;
+      const workDir = await db.bookWorkDir(bookId);
 
       let extracted = await cachedBookFromExtraction({
         cachePath: extractionCachePath(workDir),

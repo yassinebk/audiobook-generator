@@ -210,6 +210,18 @@ fn db_get_chapters(book_id: String) -> Result<Vec<serde_json::Value>, String> {
     Ok(result)
 }
 
+#[tauri::command]
+fn book_work_dir(book_id: String) -> String {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("audiobook-generator")
+        .join("books")
+        .join(&book_id)
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
 // ── Worker command ──────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -265,6 +277,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             run_worker, copy_file,
             db_create_book, db_upsert_chapter, db_get_chapters_with_scripts,
+            book_work_dir,
             db_list_books, db_get_book, db_upsert_character, db_get_characters, db_get_chapters,
         ])
         .run(tauri::generate_context!())

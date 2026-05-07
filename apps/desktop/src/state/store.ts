@@ -38,5 +38,8 @@ export function createAudiobookStore() {
     async getChapters(bookId: string): Promise<ChapterRow[]> {
       return await invoke("db_get_chapters", { bookId }) as any;
     },
+    async bookWorkDir(bookId: string): Promise<string> {
+      return await invoke("book_work_dir", { bookId }) as string;
+    },
   };
 }
