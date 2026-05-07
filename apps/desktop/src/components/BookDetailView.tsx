@@ -27,12 +27,14 @@ const VOICE_OPTIONS = [
 interface BookDetailViewProps {
   libraryBook: LibraryBook;
   book: BookState;
+  sourcePath: string;
   onBack: () => void;
 }
 
 export function BookDetailView({
   libraryBook,
   book,
+  sourcePath,
   onBack,
 }: BookDetailViewProps) {
   const pipeline = usePipelineStore();
@@ -168,6 +170,42 @@ export function BookDetailView({
         ? new Set()
         : new Set(book.chapters.map((c) => c.id)),
     );
+  }
+
+  async function handleReextract() {
+    if (!sourcePath) return;
+    pipeline.setStage("importing");
+    pipeline.setAnalyzeProgress("Re-extracting chapters...");
+    try {
+      const result = await workerCall("extract_book", {
+        bookPath: sourcePath,
+        outputDirectory: `${book.workDir}/chapters`,
+      });
+      if (result.status !== "succeeded") {
+        throw new Error((result.error as any)?.message ?? "extract_book failed");
+      }
+      const artifact = (result.artifacts as unknown as Array<{
+        metadata: { title: string; chapters: { id: string; title: string; textLength: number; textPath: string }[] };
+      }>)[0];
+      const freshChapters = artifact.metadata.chapters;
+
+      const existingScripts = pipeline.analysis?.scriptPaths ?? {};
+      for (const c of freshChapters) {
+        db.upsertChapter({
+          id: c.id,
+          bookId: book.bookId,
+          title: c.title,
+          status: existingScripts[c.id] ? "succeeded" : "pending",
+          scriptPath: existingScripts[c.id],
+        }).catch(() => {});
+      }
+
+      pipeline.setAnalyzeProgress(`Re-extracted: found ${freshChapters.length} chapters (${Object.keys(existingScripts).length} previously analyzed).`);
+      pipeline.setStage("idle");
+    } catch (err) {
+      pipeline.setError(String(err));
+      pipeline.setStage("error");
+    }
   }
 
   function handleStop() {
@@ -342,6 +380,13 @@ export function BookDetailView({
           ← Library
         </button>
         <h1>{book.title}</h1>
+        <button
+          className="btn-secondary"
+          onClick={handleReextract}
+          disabled={isBusy}
+        >
+          Re-extract
+        </button>
         <button className="btn-secondary" onClick={handleRegenerateAll}>
           Regen All
         </button>

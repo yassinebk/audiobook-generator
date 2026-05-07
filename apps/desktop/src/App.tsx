@@ -23,6 +23,7 @@ export function App() {
   const {
     view,
     activeBook,
+    activeSourcePath,
     importError,
     navigateToLibrary,
     navigateToBook,
@@ -115,7 +116,7 @@ export function App() {
       if (existingBook) {
         setImportError(`Re-extracted "${extracted.title}". Found ${freshChapters.length} chapters${existingChapters.length > 0 ? ` (${existingChapters.length} already analyzed).` : "."}`);
       }
-      navigateToBook(extracted);
+      navigateToBook(extracted, sourcePath);
     } catch (err) {
       setImportError(String(err));
     }
@@ -136,7 +137,7 @@ export function App() {
               }),
           });
           if (cache) {
-            navigateToBook(cache);
+            navigateToBook(cache, libBook.sourcePath);
             return;
           }
           const chapters = await db.getChapters(libBook.id);
@@ -150,7 +151,7 @@ export function App() {
               textLength: 0,
               textPath: `${libBook.workDir}/chapters/${c.id}.txt`,
             })),
-          });
+          }, libBook.sourcePath);
         }}
         importError={importError}
       />
@@ -161,7 +162,7 @@ export function App() {
     const libBook: LibraryBook = {
       id: activeBook.bookId,
       title: activeBook.title,
-      sourcePath: "",
+      sourcePath: activeSourcePath,
       workDir: activeBook.workDir,
       importedAt: null,
     };
@@ -169,6 +170,7 @@ export function App() {
       <BookDetailView
         libraryBook={libBook}
         book={activeBook}
+        sourcePath={activeSourcePath}
         onBack={navigateToLibrary}
       />
     );
