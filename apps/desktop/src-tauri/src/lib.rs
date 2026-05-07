@@ -266,6 +266,11 @@ async fn copy_file(from: String, to: String) -> Result<String, String> {
     Ok(to)
 }
 
+#[tauri::command]
+fn file_exists(paths: Vec<String>) -> Vec<String> {
+    paths.into_iter().filter(|p| std::path::Path::new(p).exists()).collect()
+}
+
 // ── App entry ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -275,9 +280,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            run_worker, copy_file,
-            db_create_book, db_upsert_chapter, db_get_chapters_with_scripts,
-            book_work_dir,
+            run_worker, copy_file, file_exists,
+            db_create_book, db_upsert_chapter, db_get_chapters_with_scripts, book_work_dir,
             db_list_books, db_get_book, db_upsert_character, db_get_characters, db_get_chapters,
         ])
         .run(tauri::generate_context!())

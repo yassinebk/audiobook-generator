@@ -87,10 +87,12 @@ export function BookDetailView({
   useEffect(() => {
     let cancelled = false;
     async function restore() {
+      // Load characters
       const chars = await db.getCharacters(book.bookId);
       if (cancelled) return;
+
       if (chars.length > 0) {
-        pipeline.setAnalysis((prev) => ({
+        pipeline.setAnalysis({
           characters: chars.map(
             (c): CharacterMeta => ({
               id: c.id,
@@ -101,43 +103,42 @@ export function BookDetailView({
               confidence: c.confidence,
             }),
           ),
-          voices: prev?.voices ?? [],
-          scriptPaths: prev?.scriptPaths ?? {},
-        }));
+          voices: [],
+          scriptPaths: {},
+        });
       }
 
-      const chaptersWithScripts =
-        await db.getChaptersWithScripts(book.bookId);
+      // Load scripts (analyzed chapters)
+      const chaptersWithScripts = await db.getChaptersWithScripts(book.bookId);
       if (cancelled) return;
       const scriptPaths: Record<string, string> = {};
       for (const ch of chaptersWithScripts) {
         scriptPaths[ch.id] = ch.scriptPath;
       }
       if (Object.keys(scriptPaths).length > 0) {
-        pipeline.setAnalysis((prev) =>
-          prev
-            ? {
-                ...prev,
-                scriptPaths: { ...prev.scriptPaths, ...scriptPaths },
-              }
-            : { characters: [], voices: [], scriptPaths },
-        );
+        pipeline.setAnalysis((prev) => ({
+          characters: prev?.characters ?? [],
+          voices: prev?.voices ?? [],
+          scriptPaths: { ...prev?.scriptPaths, ...scriptPaths },
+        }));
       }
 
-      const audioPaths: Record<string, string> = {};
-      for (const ch of book.chapters) {
-        const audioPath = `${book.workDir}/audio/${ch.id}.wav`;
-        try {
-          await invoke("run_worker", {
-            command: "_read_file",
-            inputJson: JSON.stringify({ path: audioPath }),
-          });
-          audioPaths[ch.id] = audioPath;
-        } catch {
-          /* file doesn't exist */
+      // Fast bulk audio check — single invoke for all paths
+      const audioPaths = book.chapters.map((ch) => `${book.workDir}/audio/${ch.id}.wav`);
+      const existing: string[] = await invoke("file_exists", { paths: audioPaths });
+      if (cancelled) return;
+      const paths: Record<string, string> = {};
+      for (let i = 0; i < book.chapters.length && i < audioPaths.length; i++) {
+        if (existing.includes(audioPaths[i])) {
+          paths[book.chapters[i].id] = audioPaths[i];
         }
       }
-      if (!cancelled) pipeline.setChapterAudioPaths(audioPaths);
+      pipeline.setChapterAudioPaths(paths);
+      // Auto-select chapters that need analysis (no script yet)
+      const unanalyzed = book.chapters.filter((c) => !scriptPaths[c.id]).map((c) => c.id);
+      if (unanalyzed.length > 0) {
+        pipeline.setSelectedChapters(new Set(unanalyzed));
+      }
     }
     restore();
     return () => {
