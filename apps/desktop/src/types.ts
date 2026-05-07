@@ -60,3 +60,31 @@ export type PipelineStage =
   | "error";
 
 export type WorkspaceStep = 1 | 2 | 3 | 4 | "done";
+
+export interface LibraryBook {
+  id: string;
+  title: string;
+  sourcePath: string;
+  workDir: string;
+  importedAt: string | null;
+}
+
+export interface ChapterRecord {
+  id: string;
+  title: string;
+  status: string;
+  scriptPath: string | null;
+}
+
+export interface CharacterRecord {
+  id: string;
+  canonicalName: string;
+  gender: string | null;
+  voiceId: string | null;
+  confidence: number;
+  aliases: string;
+}
+
+export type AppView =
+  | { page: "library" }
+  | { page: "bookDetail"; bookId: string };

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { LibraryBook, CharacterRecord, ChapterRecord } from "../types";
 
 export function createAudiobookStore() {
   return {
@@ -10,6 +11,32 @@ export function createAudiobookStore() {
     },
     async getChaptersWithScripts(bookId: string): Promise<Array<{ id: string; scriptPath: string }>> {
       return await invoke("db_get_chapters_with_scripts", { bookId }) as any;
+    },
+    async listBooks(): Promise<LibraryBook[]> {
+      return await invoke("db_list_books") as any;
+    },
+    async getBook(sourcePath: string): Promise<LibraryBook | null> {
+      return await invoke("db_get_book", { sourcePath }) as any;
+    },
+    async upsertCharacter(record: {
+      id: string; bookId: string; canonicalName: string;
+      gender?: string | null; voiceId?: string | null;
+      confidence?: number; aliases?: string;
+    }) {
+      return invoke("db_upsert_character", {
+        id: record.id, bookId: record.bookId,
+        canonicalName: record.canonicalName,
+        gender: record.gender ?? null,
+        voiceId: record.voiceId ?? null,
+        confidence: record.confidence ?? 0.0,
+        aliases: record.aliases ?? "[]",
+      });
+    },
+    async getCharacters(bookId: string): Promise<CharacterRecord[]> {
+      return await invoke("db_get_characters", { bookId }) as any;
+    },
+    async getChapters(bookId: string): Promise<ChapterRecord[]> {
+      return await invoke("db_get_chapters", { bookId }) as any;
     },
   };
 }
