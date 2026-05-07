@@ -1,18 +1,52 @@
-# 🎙 Audiobook Generator
+# Audiobook Generator
 
 > Local-first desktop application that turns EPUB and PDF books into
 > chapter-narrated audiobooks with character-aware voice casting.
 
 Audiobook Generator runs entirely on your machine: text extraction,
 LLM-powered character analysis, dialogue script construction, and
-text-to-speech synthesis all happen locally.
+text-to-speech synthesis all happen locally — no cloud, no accounts.
+
+---
+
+## Screenshots
+
+### Library
+
+Browse and manage your imported books, each showing chapter generation progress.
+
+![Library view showing three books with progress bars](docs/screenshots/library.png)
+
+### Analyze
+
+Select chapters and run LLM analysis to extract characters and build dialogue scripts.
+Real-time progress shows each chapter's status and discovered characters as they appear.
+
+![Analyze tab showing in-progress chapter analysis with progress bar and character chips](docs/screenshots/book-detail-analyze-progress.png)
+
+### Review
+
+Inspect every detected character — correct names, genders, and voice assignments
+before generating audio.
+
+![Review tab showing character table with gender and voice dropdowns](docs/screenshots/book-detail-review.png)
+
+### Generate
+
+Synthesize chapter audio using per-character Kokoro TTS voices. Chapters with
+completed scripts are ready to generate.
+
+![Generate tab showing chapter list ready for audio synthesis](docs/screenshots/book-detail-generate.png)
+
+---
 
 ## Features
 
 - **Import** EPUB and PDF books (text + OCR for scanned pages)
-- **Analyze** characters, dialogue, and narration per chapter via local LLMs
+- **Analyze** characters, dialogue, and narration per chapter via local LLMs —
+  with cross-chapter character consistency and exponential-backoff retry
 - **Review** detected characters: correct names, genders, and voice assignments
-- **Generate** chapter audio with per-character voice synthesis (Parler TTS)
+- **Generate** chapter audio with per-character voice synthesis (Kokoro TTS)
 - **Listen** to chapters in-app or export individual `.wav` files
 
 ## Architecture
@@ -25,7 +59,7 @@ text-to-speech synthesis all happen locally.
 │  │  ┌──────────┬──────────┬──────────┬─────────┐  │  │
 │  │  │ Import   │ Analyze  │ Review   │ Generate│  │  │
 │  │  └──────────┴──────────┴──────────┴─────────┘  │  │
-│  │  Sidebar · Step stepper · Progress tracking    │  │
+│  │  Sidebar · Step tabs · Real-time progress      │  │
 │  └────────────────────────────────────────────────┘  │
 │                         │                            │
 │  ┌──────────────────────▼─────────────────────────┐  │
@@ -40,7 +74,7 @@ text-to-speech synthesis all happen locally.
    - Text extraction from EPUB/PDF via `ebooklib` and `pymupdf`
    - OCR fallback for scanned pages via `pytesseract`
    - LLM character/dialogue analysis via OpenAI-compatible APIs
-   - Text-to-speech via `parler-tts` (MPS-accelerated on macOS)
+   - Text-to-speech via Kokoro TTS (MPS-accelerated on macOS)
 3. **Script IR** — an intermediate JSON format captures chapter scripts
    with characters, voices, emotions, and dialogue segments
 4. **All local** — no cloud uploads, no accounts needed
@@ -108,7 +142,7 @@ testing the TTS pipeline without an API key.
 
 ### TTS Configuration
 
-Parler TTS acceleration is controlled via the `AUDIOBOOK_TTS_DEVICE`
+Kokoro TTS acceleration is controlled via the `AUDIOBOOK_TTS_DEVICE`
 environment variable:
 
 ```sh
@@ -136,8 +170,8 @@ raise a clear error at synthesis time.
 ├── apps/desktop/          # Tauri + React desktop app
 │   └── src/
 │       ├── components/    # React UI components
-│       │   └── steps/     # Pipeline step views
-│       ├── state/         # Client-side state stores
+│       ├── hooks/         # Pipeline orchestration hooks
+│       ├── state/         # Zustand state stores
 │       ├── lib/           # Shared utilities
 │       └── workers/       # Worker invocation layer
 ├── packages/shared/       # Shared TypeScript types (script IR)
@@ -147,7 +181,8 @@ raise a clear error at synthesis time.
 ├── docs/                  # Design docs, ADRs, plans
 │   ├── adr/               # Architecture Decision Records
 │   ├── design/            # Design documents
-│   └── plans/             # Implementation plans
+│   ├── plans/             # Implementation plans
+│   └── screenshots/       # UI screenshots
 ├── fixtures/books/        # Test fixture books
 └── package.json           # Monorepo root
 ```
