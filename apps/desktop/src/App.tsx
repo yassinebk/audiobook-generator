@@ -1,12 +1,17 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppView, BookState, LibraryBook } from "./types";
+import type { BookState, LibraryBook } from "./types";
 import { LibraryView } from "./components/LibraryView";
 import { BookDetailView } from "./components/BookDetailView";
 import { createAudiobookStore } from "./state/store";
+import { useAppStore } from "./state/appStore";
 import { workerCall } from "./lib/workerCall";
-import { cachedBookFromExtraction, extractionCachePath, writeExtractionCache } from "./lib/importCache";
+import {
+  cachedBookFromExtraction,
+  extractionCachePath,
+  writeExtractionCache,
+} from "./lib/importCache";
 
 const db = createAudiobookStore();
 
@@ -15,19 +20,14 @@ function getBookStem(path: string): string {
 }
 
 export function App() {
-  const [view, setView] = useState<AppView>({ page: "library" });
-  const [activeBook, setActiveBook] = useState<BookState | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-
-  const navigateToLibrary = useCallback(() => {
-    setView({ page: "library" });
-    setImportError(null);
-  }, []);
-
-  const navigateToBook = useCallback((book: BookState) => {
-    setActiveBook(book);
-    setView({ page: "bookDetail", bookId: book.bookId });
-  }, []);
+  const {
+    view,
+    activeBook,
+    importError,
+    navigateToLibrary,
+    navigateToBook,
+    setImportError,
+  } = useAppStore();
 
   const handleImport = useCallback(async () => {
     const path = await open({
@@ -42,11 +42,17 @@ export function App() {
     try {
       const existing = await db.getBook(sourcePath);
       if (existing) {
-        setImportError(`"${existing.title}" is already in your library. Opening it now.`);
+        setImportError(
+          `"${existing.title}" is already in your library. Opening it now.`,
+        );
         const cache = await cachedBookFromExtraction({
           cachePath: extractionCachePath(existing.workDir),
           sourcePath,
-          readJson: async (p) => await invoke("run_worker", { command: "_read_file", inputJson: JSON.stringify({ path: p }) }),
+          readJson: async (p) =>
+            await invoke("run_worker", {
+              command: "_read_file",
+              inputJson: JSON.stringify({ path: p }),
+            }),
         });
         if (cache) {
           navigateToBook(cache);
@@ -57,7 +63,12 @@ export function App() {
           title: existing.title,
           bookId: existing.id,
           workDir: existing.workDir,
-          chapters: chapters.map(c => ({ id: c.id, title: c.title, textLength: 0, textPath: `${existing.workDir}/chapters/${c.id}.txt` })),
+          chapters: chapters.map((c) => ({
+            id: c.id,
+            title: c.title,
+            textLength: 0,
+            textPath: `${existing.workDir}/chapters/${c.id}.txt`,
+          })),
         });
         return;
       }
@@ -75,7 +86,11 @@ export function App() {
       let extracted = await cachedBookFromExtraction({
         cachePath: extractionCachePath(workDir),
         sourcePath,
-        readJson: async (p) => await invoke("run_worker", { command: "_read_file", inputJson: JSON.stringify({ path: p }) }),
+        readJson: async (p) =>
+          await invoke("run_worker", {
+            command: "_read_file",
+            inputJson: JSON.stringify({ path: p }),
+          }),
       });
 
       if (!extracted) {
@@ -84,9 +99,23 @@ export function App() {
           outputDirectory: `${workDir}/chapters`,
         });
         if (result.status !== "succeeded") {
-          throw new Error((result.error as any)?.message ?? "extract_book failed");
+          throw new Error(
+            (result.error as any)?.message ?? "extract_book failed",
+          );
         }
-        const artifact = (result.artifacts as Array<{ metadata: { title: string; chapters: { id: string; title: string; textLength: number; textPath: string }[] } }>)[0];
+        const artifact = (
+          result.artifacts as Array<{
+            metadata: {
+              title: string;
+              chapters: {
+                id: string;
+                title: string;
+                textLength: number;
+                textPath: string;
+              }[];
+            };
+          }>
+        )[0];
         extracted = {
           title: artifact.metadata.title,
           bookId,
@@ -97,7 +126,10 @@ export function App() {
           sourcePath,
           book: extracted,
           writeJson: async (p, payload) => {
-            await workerCall("_write_file", { path: p, content: JSON.stringify(payload) });
+            await workerCall("_write_file", {
+              path: p,
+              content: JSON.stringify(payload),
+            });
           },
         });
       }
@@ -113,7 +145,7 @@ export function App() {
     } catch (err) {
       setImportError(String(err));
     }
-  }, [navigateToBook]);
+  }, [navigateToBook, setImportError]);
 
   if (view.page === "library") {
     return (
@@ -123,7 +155,11 @@ export function App() {
           const cache = await cachedBookFromExtraction({
             cachePath: extractionCachePath(libBook.workDir),
             sourcePath: libBook.sourcePath,
-            readJson: async (p) => await invoke("run_worker", { command: "_read_file", inputJson: JSON.stringify({ path: p }) }),
+            readJson: async (p) =>
+              await invoke("run_worker", {
+                command: "_read_file",
+                inputJson: JSON.stringify({ path: p }),
+              }),
           });
           if (cache) {
             navigateToBook(cache);
@@ -134,7 +170,12 @@ export function App() {
             title: libBook.title,
             bookId: libBook.id,
             workDir: libBook.workDir,
-            chapters: chapters.map(c => ({ id: c.id, title: c.title, textLength: 0, textPath: `${libBook.workDir}/chapters/${c.id}.txt` })),
+            chapters: chapters.map((c) => ({
+              id: c.id,
+              title: c.title,
+              textLength: 0,
+              textPath: `${libBook.workDir}/chapters/${c.id}.txt`,
+            })),
           });
         }}
         importError={importError}
@@ -150,7 +191,13 @@ export function App() {
       workDir: activeBook.workDir,
       importedAt: null,
     };
-    return <BookDetailView libraryBook={libBook} book={activeBook} onBack={navigateToLibrary} />;
+    return (
+      <BookDetailView
+        libraryBook={libBook}
+        book={activeBook}
+        onBack={navigateToLibrary}
+      />
+    );
   }
 
   return null;

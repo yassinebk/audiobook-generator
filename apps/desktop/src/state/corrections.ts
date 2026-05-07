@@ -1,3 +1,5 @@
+import { create } from "zustand";
+
 export interface AliasMerge {
   from: string;
   to: string;
@@ -25,86 +27,114 @@ export interface CorrectionState extends CorrectionSet {
   affectedChapters: string[];
 }
 
-export function createCorrectionsStore() {
-  let state: CorrectionState = {
+interface CorrectionActions {
+  addMerge: (merge: AliasMerge) => void;
+  setGender: (characterId: string, gender: string) => void;
+  setVoice: (characterId: string, voiceId: string) => void;
+  markSaved: (affectedChapters: string[]) => void;
+  reset: () => void;
+}
+
+type CorrectionStore = CorrectionState & CorrectionActions;
+
+function makeStore() {
+  return create<CorrectionStore>()((set) => ({
     aliasMerges: [],
     genderOverrides: [],
     voiceOverrides: [],
     dirty: false,
     savedCorrections: null,
     affectedChapters: [],
-  };
 
-  const listeners = new Set<() => void>();
-
-  function notify() {
-    for (const fn of listeners) fn();
-  }
-
-  return {
-    get(): CorrectionState {
-      return state;
-    },
-
-    subscribe(fn: () => void) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-
-    addMerge(merge: AliasMerge) {
-      state = {
-        ...state,
-        aliasMerges: [...state.aliasMerges.filter(m => m.from !== merge.from), merge],
+    addMerge: (merge) =>
+      set((s) => ({
+        aliasMerges: [
+          ...s.aliasMerges.filter((m) => m.from !== merge.from),
+          merge,
+        ],
         dirty: true,
-      };
-      notify();
-    },
+      })),
 
-    setGender(characterId: string, gender: string) {
-      state = {
-        ...state,
+    setGender: (characterId, gender) =>
+      set((s) => ({
         genderOverrides: [
-          ...state.genderOverrides.filter(o => o.characterId !== characterId),
+          ...s.genderOverrides.filter(
+            (o) => o.characterId !== characterId,
+          ),
           { characterId, gender },
         ],
         dirty: true,
-      };
-      notify();
-    },
+      })),
 
-    setVoice(characterId: string, voiceId: string) {
-      state = {
-        ...state,
+    setVoice: (characterId, voiceId) =>
+      set((s) => ({
         voiceOverrides: [
-          ...state.voiceOverrides.filter(o => o.characterId !== characterId),
+          ...s.voiceOverrides.filter(
+            (o) => o.characterId !== characterId,
+          ),
           { characterId, voiceId },
         ],
         dirty: true,
-      };
-      notify();
-    },
+      })),
 
-    markSaved(affectedChapters: string[]) {
-      const { dirty: _, savedCorrections: __, affectedChapters: ___, ...corrections } = state;
-      state = {
-        ...state,
+    markSaved: (affectedChapters) =>
+      set((s) => ({
         dirty: false,
-        savedCorrections: corrections,
+        savedCorrections: {
+          aliasMerges: s.aliasMerges,
+          genderOverrides: s.genderOverrides,
+          voiceOverrides: s.voiceOverrides,
+        },
         affectedChapters,
-      };
-      notify();
-    },
+      })),
 
-    reset() {
-      state = {
+    reset: () =>
+      set({
         aliasMerges: [],
         genderOverrides: [],
         voiceOverrides: [],
         dirty: false,
         savedCorrections: null,
         affectedChapters: [],
-      };
-      notify();
+      }),
+  }));
+}
+
+export function createCorrectionsStore() {
+  const useStore = makeStore();
+
+  return {
+    get(): CorrectionState {
+      const full = useStore.getState() as CorrectionStore;
+      const {
+        addMerge: _am,
+        setGender: _sg,
+        setVoice: _sv,
+        markSaved: _ms,
+        reset: _r,
+        ...state
+      } = full;
+      return state as CorrectionState;
     },
+
+    subscribe(fn: () => void) {
+      return useStore.subscribe(fn);
+    },
+
+    addMerge: (merge: AliasMerge) =>
+      useStore.getState().addMerge(merge),
+
+    setGender: (characterId: string, gender: string) =>
+      useStore.getState().setGender(characterId, gender),
+
+    setVoice: (characterId: string, voiceId: string) =>
+      useStore.getState().setVoice(characterId, voiceId),
+
+    markSaved: (affectedChapters: string[]) =>
+      useStore.getState().markSaved(affectedChapters),
+
+    reset: () => useStore.getState().reset(),
   };
 }
+
+export const useCorrectionStore = makeStore();
