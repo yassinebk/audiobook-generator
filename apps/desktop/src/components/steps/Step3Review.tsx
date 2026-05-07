@@ -69,7 +69,17 @@ export function Step3Review({
               "Save Corrections"
             )}
           </button>
-          <button className="btn-secondary" type="button" onClick={onContinue}>
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={onContinue}
+            disabled={correctionState.dirty}
+            title={
+              correctionState.dirty
+                ? "Save corrections before continuing"
+                : undefined
+            }
+          >
             Continue to Generate →
           </button>
         </div>

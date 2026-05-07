@@ -16,7 +16,7 @@ def test_builds_dialogue_aware_chapter_script():
     assert script["characters"][0]["gender"] == "female"
     assert [segment["type"] for segment in script["segments"]] == ["narration", "dialogue", "narration"]
     assert script["segments"][1]["speakerId"] == "elizabeth"
-    assert script["segments"][1]["voiceId"] == "female_adult_01"
+    assert script["segments"][1]["voiceId"].startswith("female_adult_")
     assert script["segments"][1]["emotion"] == "neutral"
     assert script["segments"][1]["confidence"] >= 0.7
 

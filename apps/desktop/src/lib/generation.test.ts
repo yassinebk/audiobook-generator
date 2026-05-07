@@ -24,7 +24,7 @@ describe("synthesizeChapter", () => {
     expect(worker).toHaveBeenNthCalledWith(1, "synthesize_chapter_audio", {
       scriptPath: "/tmp/book/scripts/chapter_001.json",
       outputDirectory: "/tmp/book/segments/chapter_001",
-      backend: "parler",
+      backend: "kokoro",
       mergeSegments: true,
       cacheSegments: true,
     });

@@ -16,7 +16,7 @@ def assemble_chapter_audio(
     segment_paths: list[Path],
     output_path: Path | str,
     *,
-    gap_seconds: float = 0.15,
+    gap_seconds: float = 0.5,
 ) -> ChapterAudioArtifact:
     if not segment_paths:
         raise ValueError("at least one segment audio path is required")

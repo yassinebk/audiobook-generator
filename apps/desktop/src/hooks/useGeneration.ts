@@ -51,7 +51,7 @@ export function useGeneration(deps: UseGenerationDeps) {
   } = deps;
 
   const generateChapters = useCallback(
-    async (chaptersToGenerate: ChapterMeta[]) => {
+    async (chaptersToGenerate: ChapterMeta[], cacheSegments = true) => {
       if (!book || !analysis) return;
       const controller = new AbortController();
       abortRef.current = controller;
@@ -60,7 +60,7 @@ export function useGeneration(deps: UseGenerationDeps) {
       setAnalyzeProgress("");
 
       setProgressDetail([
-        { label: "Backend", value: "Parler TTS (MPS)" },
+        { label: "Backend", value: "Kokoro-82M (MPS)" },
         { label: "Chapters", value: String(chaptersToGenerate.length) },
       ]);
 
@@ -128,6 +128,7 @@ export function useGeneration(deps: UseGenerationDeps) {
               scriptPath,
               segmentAudioDirectory: segDir,
               outputPath: assembledPath,
+              cacheSegments,
             });
           } finally {
             window.clearInterval(progressTimer);
@@ -198,7 +199,7 @@ export function useGeneration(deps: UseGenerationDeps) {
 
   const handleRegenerateChapter = useCallback(
     async (chapter: ChapterMeta) => {
-      await generateChapters([chapter]);
+      await generateChapters([chapter], false);
     },
     [generateChapters],
   );
@@ -208,7 +209,7 @@ export function useGeneration(deps: UseGenerationDeps) {
     const generatedChapters = book.chapters.filter(
       (c) => chapterAudioPaths[c.id],
     );
-    await generateChapters(generatedChapters);
+    await generateChapters(generatedChapters, false);
   }, [book, chapterAudioPaths, generateChapters]);
 
   return { handleGenerate, handleRegenerateChapter, handleRegenerateAll };

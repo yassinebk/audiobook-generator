@@ -22,7 +22,7 @@ export function generationProgressDetails({
   const remaining = Math.round(avgPerSeg * Math.max(totalSegments - doneSegments, 0));
 
   return [
-    { label: "Backend", value: "Parler TTS (MPS)" },
+    { label: "Backend", value: "Kokoro-82M (MPS)" },
     { label: "Chapter", value: `${chapterIndex} of ${chapterCount}` },
     { label: "Segments", value: String(segmentCount) },
     { label: "Elapsed", value: `${elapsed}s` },

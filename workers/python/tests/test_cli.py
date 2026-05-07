@@ -44,6 +44,54 @@ def test_unknown_command_returns_structured_error(tmp_path: Path):
     }
 
 
+def test_synthesize_segment_audio_uses_kokoro_backend_by_default(tmp_path: Path):
+    """CLI synthesize_segment_audio command defaults to KokoroTTSBackend."""
+    import numpy as np
+    import torch as _torch
+    from audiobook_worker.cli import main
+
+    script = {
+        "bookId": "book1",
+        "chapterId": "ch01",
+        "segments": [
+            {
+                "id": "seg_0001",
+                "text": "In the beginning.",
+                "voiceId": "narrator_default",
+                "emotion": "neutral",
+                "intensity": 0.2,
+                "pace": "normal",
+            }
+        ],
+    }
+    script_path = tmp_path / "script.json"
+    script_path.write_text(json.dumps(script))
+
+    request = {
+        "scriptPath": str(script_path),
+        "segmentId": "seg_0001",
+        "outputDirectory": str(tmp_path / "audio"),
+    }
+    input_path = tmp_path / "input.json"
+    input_path.write_text(json.dumps(request))
+    output_path = tmp_path / "output.json"
+
+    fake_audio = _torch.tensor(np.zeros(24000, dtype=np.float32))
+    mock_result = MagicMock()
+    mock_result.audio = fake_audio
+    mock_pipeline = MagicMock()
+    mock_pipeline.return_value = [mock_result]
+
+    with patch("audiobook_worker.tts.KPipeline") as mock_kp:
+        mock_kp.return_value = mock_pipeline
+        exit_code = main(["synthesize_segment_audio", str(input_path), str(output_path)])
+
+    assert exit_code == 0
+    result = json.loads(output_path.read_text())
+    assert result["status"] == "succeeded"
+    mock_kp.assert_called_once()
+
+
 def test_synthesize_segment_audio_uses_parler_backend(tmp_path: Path):
     """CLI synthesize_segment_audio command selects ParlerTTSBackend when backend=parler."""
     import numpy as np

@@ -31,6 +31,10 @@ describe("StepDone", () => {
         analysis={null}
         savedMessage={null}
         isBusy={false}
+        isGenerating={false}
+        analyzeProgress=""
+        progressDetail={[]}
+        progress={0}
         onSaveChapter={() => {}}
         onRegenerateChapter={onRegenerateChapter}
         onRegenerateAll={onRegenerateAll}

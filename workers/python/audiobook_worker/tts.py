@@ -42,6 +42,11 @@ except ImportError:
     ParlerTTSForConditionalGeneration = None  # type: ignore[assignment,misc]
     AutoTokenizer = None  # type: ignore[assignment,misc]
 
+try:
+    from kokoro import KPipeline
+except ImportError:
+    KPipeline = None  # type: ignore[assignment,misc]
+
 
 # ---------------------------------------------------------------------------
 # Artifacts
@@ -75,7 +80,76 @@ class MockTTSBackend:
 
 
 # ---------------------------------------------------------------------------
-# Parler TTS backend
+# Kokoro TTS backend (primary)
+# ---------------------------------------------------------------------------
+
+class KokoroTTSBackend:
+    backend_id = "kokoro"
+
+    def __init__(self, lang_code: str = "a") -> None:
+        self._lang_code = lang_code
+        self._pipeline = None
+
+    def synthesize_segment(self, segment: dict, output_directory: Path | str) -> AudioArtifact:
+        import numpy as np
+        import soundfile as sf
+
+        self._ensure_pipeline()
+
+        directory = Path(output_directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        output_path = directory / f"{segment['id']}.wav"
+
+        voice_id = segment.get("voiceId", "narrator_default")
+        voice_name = _kokoro_voice_for(voice_id)
+        text = segment["text"]
+
+        generator = self._pipeline(text, voice=voice_name, speed=1.0, split_pattern=None)
+
+        segments_audio = []
+        for result in generator:
+            audio_segment = result.audio
+            if hasattr(audio_segment, "cpu"):
+                audio_segment = audio_segment.cpu().numpy().squeeze()
+            else:
+                audio_segment = np.array(audio_segment).squeeze()
+            if audio_segment.ndim == 1 and len(audio_segment) > 0:
+                segments_audio.append(audio_segment)
+
+        audio = np.concatenate(segments_audio) if segments_audio else np.zeros(0, dtype=np.float32)
+        sf.write(str(output_path), audio, 24000)
+
+        duration = len(audio) / 24000
+        return AudioArtifact(
+            kind="segment_audio",
+            path=output_path,
+            duration_seconds=duration,
+        )
+
+    def _ensure_pipeline(self) -> None:
+        if self._pipeline is not None:
+            return
+
+        import torch
+
+        requested_device = os.environ.get("AUDIOBOOK_TTS_DEVICE", "auto")
+        kokoro_device = _select_kokoro_device(torch, requested_device)
+
+        # KPipeline only natively supports 'cpu'/'cuda', so init on CPU first
+        init_device = kokoro_device if kokoro_device in ("cpu", "cuda") else "cpu"
+        self._pipeline = KPipeline(lang_code=self._lang_code, device=init_device)
+
+        # Move model to MPS after init if available
+        if kokoro_device == "mps" and self._pipeline.model is not None:
+            self._pipeline.model.to("mps")
+            self._pipeline.model.eval()
+            self._device = "mps"
+        else:
+            self._device = kokoro_device
+
+
+# ---------------------------------------------------------------------------
+# Parler TTS backend (secondary, kept for comparison / voice-description mode)
 # ---------------------------------------------------------------------------
 
 class ParlerTTSBackend:
@@ -153,6 +227,7 @@ class ParlerTTSBackend:
             generation = self._model.generate(
                 input_ids=desc_ids,
                 prompt_input_ids=prompt_ids,
+                do_sample=False,
             )
 
         return generation.cpu().numpy().squeeze()
@@ -196,6 +271,27 @@ def _select_torch_device(torch_module, requested_device: str = "auto") -> str:
     if cuda_available:
         return "cuda"
     return "cpu"
+
+
+def _select_kokoro_device(torch_module, requested_device: str = "auto") -> str:
+    """Select device for Kokoro. Returns device string for KPipeline init.
+    MPS acceleration is applied post-init by moving the model manually."""
+    requested = requested_device.strip().lower()
+    if requested == "cpu":
+        return "cpu"
+    if requested == "cuda" and torch_module.cuda.is_available():
+        return "cuda"
+    if requested in ("mps", "auto"):
+        if torch_module.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+    return "cpu"
+
+
+def _kokoro_voice_for(voice_id: str) -> str:
+    """Map internal voice IDs to Kokoro voice names."""
+    voice_entry = VOICE_REGISTRY.get(voice_id, VOICE_REGISTRY["narrator_default"])
+    return voice_entry.get("kokoroVoice", "af_heart")
 
 
 def _duration_for_text(text: str) -> float:

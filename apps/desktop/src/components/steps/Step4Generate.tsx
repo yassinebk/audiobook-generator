@@ -40,7 +40,7 @@ export function Step4Generate({
         <p className="eyebrow">Step 4 of 4</p>
         <h2>Generate Audio</h2>
         <p className="step-desc">
-          Synthesize selected chapters with Parler TTS on-device.
+          Synthesize selected chapters with Kokoro-82M TTS on-device.
         </p>
       </header>
 
@@ -52,7 +52,7 @@ export function Step4Generate({
           </div>
           <div className="result-row">
             <span className="result-label">Backend</span>
-            <span className="result-value">Parler TTS (MPS)</span>
+            <span className="result-value">Kokoro-82M (MPS)</span>
           </div>
           {correctionDirty && (
             <div className="result-row">
@@ -90,7 +90,7 @@ export function Step4Generate({
               `Generate ${chaptersReady.length} chapter${chaptersReady.length !== 1 ? "s" : ""}`
             )}
           </button>
-          {audioCount > 0 && (
+          {audioCount > 0 && !isGenerating && (
             <button className="btn-secondary" type="button" onClick={onContinue}>
               Listen to results →
             </button>

@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { AnalysisState, BookState, ChapterMeta } from "../../types";
+import type { AnalysisState, BookState, ChapterMeta, ProgressDetail } from "../../types";
 
 interface StepDoneProps {
   book: BookState;
@@ -7,6 +7,10 @@ interface StepDoneProps {
   analysis: AnalysisState | null;
   savedMessage: string | null;
   isBusy: boolean;
+  isGenerating: boolean;
+  analyzeProgress: string;
+  progressDetail: ProgressDetail[];
+  progress: number;
   onSaveChapter: (chapter: ChapterMeta) => void;
   onRegenerateChapter: (chapter: ChapterMeta) => void;
   onRegenerateAll: () => void;
@@ -18,6 +22,10 @@ export function StepDone({
   analysis,
   savedMessage,
   isBusy,
+  isGenerating,
+  analyzeProgress,
+  progressDetail,
+  progress,
   onSaveChapter,
   onRegenerateChapter,
   onRegenerateAll,
@@ -57,8 +65,32 @@ export function StepDone({
             disabled={isBusy}
             onClick={onRegenerateAll}
           >
-            Regenerate all
+            {isGenerating ? (
+              <>
+                <span className="spinner" /> Regenerating…
+              </>
+            ) : (
+              "Regenerate all"
+            )}
           </button>
+        </div>
+      )}
+
+      {isGenerating && (
+        <div className="generate-layout regenerate-progress">
+          {analyzeProgress && (
+            <p className="analyze-progress">{analyzeProgress}</p>
+          )}
+          {progressDetail.length > 0 && (
+            <div className="progress-detail">
+              {progressDetail.map((d) => (
+                <span key={d.label} className="progress-detail-item">
+                  <strong>{d.label}</strong> {d.value}
+                </span>
+              ))}
+            </div>
+          )}
+          <progress value={progress} max="100" aria-label="Regeneration progress" />
         </div>
       )}
 

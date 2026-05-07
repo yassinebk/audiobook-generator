@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 
 from audiobook_worker.dialogue import segment_dialogue
@@ -7,67 +8,221 @@ from audiobook_worker.llm import ChapterAnalysisRequest, MockLLMAnalyzer
 
 
 VOICE_REGISTRY = {
+    # ── Narrators ───────────────────────────────────────────────────────
     "narrator_default": {
         "id": "narrator_default",
-        "displayName": "Default Narrator",
+        "displayName": "Narrator (Warm Female)",
         "genderPresentation": "neutral",
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral", "tense", "sad", "happy"],
-        "backend": "parler",
-        "licenseNotes": "Parler TTS Apache 2.0",
-        "parlerDescription": (
-            "A middle-aged male speaker with a warm, clear, and measured voice "
-            "delivers the narration at a comfortable pace in a quiet studio environment. "
-            "The recording is clean with no background noise."
-        ),
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_heart",
     },
+    "narrator_female": {
+        "id": "narrator_female",
+        "displayName": "Narrator (Female)",
+        "genderPresentation": "neutral",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "tense", "sad", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "bf_emma",
+    },
+
+    # ── Female voices (5 distinct) ──────────────────────────────────────
     "female_adult_01": {
         "id": "female_adult_01",
-        "displayName": "Female Adult 01",
+        "displayName": "Female — Warm & Expressive",
         "genderPresentation": "female",
         "ageClass": "adult",
         "languages": ["en"],
-        "styles": ["neutral", "afraid", "happy", "sad", "angry", "excited"],
-        "backend": "parler",
-        "licenseNotes": "Parler TTS Apache 2.0",
-        "parlerDescription": (
-            "A young adult female speaker with a clear, expressive voice "
-            "delivers her lines in a quiet indoor setting. "
-            "The recording is crisp with no background noise."
-        ),
+        "styles": ["neutral", "happy", "sad", "angry", "excited", "afraid"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_heart",
     },
+    "female_adult_02": {
+        "id": "female_adult_02",
+        "displayName": "Female — Bright & Clear",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "happy", "excited", "angry"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_bella",
+    },
+    "female_adult_03": {
+        "id": "female_adult_03",
+        "displayName": "Female — Gentle & Soft",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "sad", "afraid", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_nicole",
+    },
+    "female_adult_04": {
+        "id": "female_adult_04",
+        "displayName": "Female — Energetic & Lively",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "excited", "happy", "angry"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_sky",
+    },
+    "female_adult_05": {
+        "id": "female_adult_05",
+        "displayName": "Female — Measured & Elegant",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "tense", "sad", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_sarah",
+    },
+
+    # ── Male voices (5 distinct) ────────────────────────────────────────
     "male_adult_01": {
         "id": "male_adult_01",
-        "displayName": "Male Adult 01",
+        "displayName": "Male — Deep & Resonant",
         "genderPresentation": "male",
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral", "angry", "tense", "excited"],
-        "backend": "parler",
-        "licenseNotes": "Parler TTS Apache 2.0",
-        "parlerDescription": (
-            "An adult male speaker with a deep, resonant voice "
-            "delivers his lines in a quiet indoor setting. "
-            "The recording is clean with no background noise."
-        ),
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "am_michael",
     },
+    "male_adult_02": {
+        "id": "male_adult_02",
+        "displayName": "Male — Crisp & Articulate",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "tense", "happy", "angry"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "am_liam",
+    },
+    "male_adult_03": {
+        "id": "male_adult_03",
+        "displayName": "Male — Warm & Friendly",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "happy", "excited", "sad"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "am_onyx",
+    },
+    "male_adult_04": {
+        "id": "male_adult_04",
+        "displayName": "Male — Strong & Authoritative",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "angry", "tense", "excited"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "am_eric",
+    },
+    "male_adult_05": {
+        "id": "male_adult_05",
+        "displayName": "Male — Measured & Calm",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "sad", "tense", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "am_puck",
+    },
+
+    # ── British voices (for period works like Austen) ────────────────────
+    "female_british_01": {
+        "id": "female_british_01",
+        "displayName": "Female — British (Bright)",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "happy", "excited", "sad"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "bf_isabella",
+    },
+    "female_british_02": {
+        "id": "female_british_02",
+        "displayName": "Female — British (Elegant)",
+        "genderPresentation": "female",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "tense", "sad", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "bf_lily",
+    },
+    "male_british_01": {
+        "id": "male_british_01",
+        "displayName": "Male — British (Refined)",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "angry", "tense", "happy"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "bm_george",
+    },
+    "male_british_02": {
+        "id": "male_british_02",
+        "displayName": "Male — British (Warm)",
+        "genderPresentation": "male",
+        "ageClass": "adult",
+        "languages": ["en"],
+        "styles": ["neutral", "happy", "sad", "excited"],
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "bm_lewis",
+    },
+
+    # ── Neutral / fallback ──────────────────────────────────────────────
     "neutral_dialogue_01": {
         "id": "neutral_dialogue_01",
-        "displayName": "Neutral Dialogue 01",
+        "displayName": "Neutral Dialogue",
         "genderPresentation": "neutral",
         "ageClass": "adult",
         "languages": ["en"],
         "styles": ["neutral"],
-        "backend": "parler",
-        "licenseNotes": "Parler TTS Apache 2.0",
-        "parlerDescription": (
-            "A speaker with a clear, neutral voice delivers dialogue "
-            "in a quiet studio environment. "
-            "The recording has no background noise."
-        ),
+        "backend": "kokoro",
+        "licenseNotes": "Kokoro-82M Apache 2.0",
+        "kokoroVoice": "af_nicole",
     },
 }
+
+# Voice pools for deterministic round-robin assignment per gender.
+# Characters with the same gender get different voices based on name hash.
+_FEMALE_VOICE_POOL = [
+    "female_adult_01",
+    "female_adult_02",
+    "female_adult_03",
+    "female_adult_04",
+    "female_adult_05",
+]
+
+_MALE_VOICE_POOL = [
+    "male_adult_01",
+    "male_adult_02",
+    "male_adult_03",
+    "male_adult_04",
+    "male_adult_05",
+]
 
 
 def build_chapter_script(
@@ -230,7 +385,7 @@ def build_chapter_script_with_corrections(
 
 
 def _character_to_script(character) -> dict:
-    voice_id = _voice_for_gender(character.gender)
+    voice_id = _voice_for_gender(character.gender, character.id)
     return {
         "id": character.id,
         "canonicalName": character.canonical_name,
@@ -251,12 +406,26 @@ def _assign_voice(speaker_id: str, characters: list[dict]) -> str:
     return "neutral_dialogue_01"
 
 
-def _voice_for_gender(gender: str) -> str:
+def _voice_for_gender(gender: str, character_id: str = "") -> str:
+    """Pick a distinct voice for a character based on gender and name hash.
+    
+    Uses deterministic hash of the character_id so the same character always
+    gets the same voice, while different characters get different voices.
+    """
     if gender == "female":
-        return "female_adult_01"
-    if gender == "male":
-        return "male_adult_01"
-    return "neutral_dialogue_01"
+        pool = _FEMALE_VOICE_POOL
+    elif gender == "male":
+        pool = _MALE_VOICE_POOL
+    else:
+        return "neutral_dialogue_01"
+
+    if not character_id:
+        return pool[0]
+
+    # Deterministic but distributed: hash the character id to pick from pool
+    hash_bytes = hashlib.sha256(character_id.lower().encode()).digest()
+    index = int.from_bytes(hash_bytes[:4], "big") % len(pool)
+    return pool[index]
 
 
 def _emotion_intensity(emotion: str) -> float:

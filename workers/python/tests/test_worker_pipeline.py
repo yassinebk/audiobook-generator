@@ -54,6 +54,7 @@ def test_generates_script_segment_audio_and_chapter_audio(tmp_path: Path):
                 "segmentId": segment["id"],
                 "scriptPath": str(script_path),
                 "outputDirectory": str(segment_dir),
+                "backend": "mock",
             },
             tmp_path,
         )

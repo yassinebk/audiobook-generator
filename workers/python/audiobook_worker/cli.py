@@ -10,7 +10,7 @@ from audiobook_worker.audio import assemble_chapter_audio
 from audiobook_worker.llm import MockLLMAnalyzer, default_analyzer
 from audiobook_worker.segment_merge import merge_tts_segments
 from audiobook_worker.script_builder import build_chapter_script, build_chapter_script_with_corrections
-from audiobook_worker.tts import MockTTSBackend, ParlerTTSBackend
+from audiobook_worker.tts import KokoroTTSBackend, MockTTSBackend, ParlerTTSBackend
 
 
 def _response(
@@ -236,9 +236,11 @@ def _synthesize_segment_audio(request: dict[str, Any]) -> dict[str, Any]:
     segment = next(
         item for item in script["segments"] if item["id"] == request["segmentId"]
     )
-    backend_name = request.get("backend", "mock")
+    backend_name = request.get("backend", "kokoro")
     if backend_name == "parler":
         backend = ParlerTTSBackend()
+    elif backend_name == "kokoro":
+        backend = KokoroTTSBackend()
     else:
         backend = MockTTSBackend()
     artifact = backend.synthesize_segment(segment, Path(request["outputDirectory"]))
@@ -260,13 +262,13 @@ def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
     if request.get("mergeSegments", True):
         segments = merge_tts_segments(
             original_segments,
-            max_words=int(request.get("maxMergedSegmentWords", 80)),
+            max_words=int(request.get("maxMergedSegmentWords", 200)),
         )
     else:
         segments = original_segments
     output_directory = Path(request["outputDirectory"])
     output_directory.mkdir(parents=True, exist_ok=True)
-    backend_name = request.get("backend", "mock")
+    backend_name = request.get("backend", "kokoro")
     model_id = request.get("modelId")
     cache_segments = request.get("cacheSegments", True)
     backend = None
@@ -276,6 +278,8 @@ def _synthesize_chapter_audio(request: dict[str, Any]) -> dict[str, Any]:
         if backend is None:
             if backend_name == "parler":
                 backend = ParlerTTSBackend(model_id) if model_id else ParlerTTSBackend()
+            elif backend_name == "kokoro":
+                backend = KokoroTTSBackend()
             else:
                 backend = MockTTSBackend()
         return backend

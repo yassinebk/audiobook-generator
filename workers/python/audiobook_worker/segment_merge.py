@@ -6,7 +6,7 @@ from copy import deepcopy
 def merge_tts_segments(
     segments: list[dict],
     *,
-    max_words: int = 80,
+    max_words: int = 200,
 ) -> list[dict]:
     merged: list[dict] = []
 
