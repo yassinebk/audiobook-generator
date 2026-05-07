@@ -34,13 +34,15 @@ export function LibraryView({ onImport, onSelectBook, importError }: LibraryView
       if (cancelled) return;
       setBooks(list);
 
+      const chapterResults = await Promise.all(list.map((b) => db.getChapters(b.id)));
+      if (cancelled) return;
       const info = new Map<string, { total: number; generated: number }>();
-      for (const b of list) {
-        const chapters = await db.getChapters(b.id);
-        const generated = chapters.filter(c => c.status === "succeeded").length;
-        info.set(b.id, { total: chapters.length, generated });
+      for (let i = 0; i < list.length; i++) {
+        const chapters = chapterResults[i];
+        const generated = chapters.filter((c) => c.status === "succeeded").length;
+        info.set(list[i].id, { total: chapters.length, generated });
       }
-      if (!cancelled) setChapterInfo(info);
+      setChapterInfo(info);
     }
     load();
     return () => { cancelled = true; };

@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useMemo } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   AnalysisState,
@@ -127,9 +127,10 @@ export function BookDetailView({
       const audioPaths = book.chapters.map((ch) => `${book.workDir}/audio/${ch.id}.wav`);
       const existing: string[] = await invoke("file_exists", { paths: audioPaths });
       if (cancelled) return;
+      const existingSet = new Set(existing);
       const paths: Record<string, string> = {};
-      for (let i = 0; i < book.chapters.length && i < audioPaths.length; i++) {
-        if (existing.includes(audioPaths[i])) {
+      for (let i = 0; i < book.chapters.length; i++) {
+        if (existingSet.has(audioPaths[i])) {
           paths[book.chapters[i].id] = audioPaths[i];
         }
       }
@@ -154,10 +155,14 @@ export function BookDetailView({
     });
   }
 
-  function toggleAllChapters() {
-    const allSelected =
+  const allSelected = useMemo(
+    () =>
       book.chapters.length > 0 &&
-      book.chapters.every((c) => pipeline.selectedChapters.has(c.id));
+      book.chapters.every((c) => pipeline.selectedChapters.has(c.id)),
+    [book.chapters, pipeline.selectedChapters],
+  );
+
+  function toggleAllChapters() {
     pipeline.setSelectedChapters(
       allSelected
         ? new Set()
@@ -348,12 +353,7 @@ export function BookDetailView({
           <label className="select-all">
             <input
               type="checkbox"
-              checked={
-                book.chapters.length > 0 &&
-                book.chapters.every((c) =>
-                  pipeline.selectedChapters.has(c.id),
-                )
-              }
+              checked={allSelected}
               onChange={toggleAllChapters}
             />
             Select All

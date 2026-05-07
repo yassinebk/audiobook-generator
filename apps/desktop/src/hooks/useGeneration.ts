@@ -121,7 +121,7 @@ export function useGeneration(deps: UseGenerationDeps) {
             setGenerationProgress();
           });
 
-          const progressTimer = window.setInterval(setGenerationProgress, 1000);
+          const progressTimer = window.setInterval(setGenerationProgress, 2000);
           let result: Record<string, unknown>;
           try {
             result = await synthesizeChapter({

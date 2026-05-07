@@ -38,101 +38,72 @@ export function App() {
 
     const sourcePath = path as string;
 
-    // Dedup check
+    // Check if book was imported before
+    let existingBook: LibraryBook | null = null;
     try {
-      const existing = await db.getBook(sourcePath);
-      if (existing) {
-        setImportError(
-          `"${existing.title}" is already in your library. Opening it now.`,
-        );
-        const cache = await cachedBookFromExtraction({
-          cachePath: extractionCachePath(existing.workDir),
-          sourcePath,
-          readJson: async (p) =>
-            await invoke("run_worker", {
-              command: "_read_file",
-              inputJson: JSON.stringify({ path: p }),
-            }),
-        });
-        if (cache) {
-          navigateToBook(cache);
-          return;
-        }
-        const chapters = await db.getChapters(existing.id);
-        navigateToBook({
-          title: existing.title,
-          bookId: existing.id,
-          workDir: existing.workDir,
-          chapters: chapters.map((c) => ({
-            id: c.id,
-            title: c.title,
-            textLength: 0,
-            textPath: `${existing.workDir}/chapters/${c.id}.txt`,
-          })),
-        });
-        return;
-      }
+      existingBook = await db.getBook(sourcePath);
     } catch {
-      // Non-critical, proceed with import
+      // ignore
     }
 
-    // New import flow
     setImportError(null);
     try {
-      const bookStem = getBookStem(sourcePath);
-      const bookId = `${bookStem}_${Date.now()}`;
-      const workDir = await db.bookWorkDir(bookId);
+      const bookId = existingBook?.id ?? `${getBookStem(sourcePath)}_${Date.now()}`;
+      const workDir = existingBook?.workDir ?? await db.bookWorkDir(bookId);
 
-      let extracted = await cachedBookFromExtraction({
-        cachePath: extractionCachePath(workDir),
-        sourcePath,
-        readJson: async (p) =>
-          await invoke("run_worker", {
-            command: "_read_file",
-            inputJson: JSON.stringify({ path: p }),
-          }),
+      // Always re-extract to catch missing chapters from previous runs
+      const result = await workerCall("extract_book", {
+        bookPath: sourcePath,
+        outputDirectory: `${workDir}/chapters`,
       });
-
-      if (!extracted) {
-        const result = await workerCall("extract_book", {
-          bookPath: sourcePath,
-          outputDirectory: `${workDir}/chapters`,
-        });
-        if (result.status !== "succeeded") {
-          throw new Error(
-            (result.error as any)?.message ?? "extract_book failed",
-          );
-        }
-        const artifact = (
-          result.artifacts as unknown as Array<{
-            metadata: {
-              title: string;
-              chapters: {
-                id: string;
-                title: string;
-                textLength: number;
-                textPath: string;
-              }[];
-            };
-          }>
-        )[0];
-        extracted = {
-          title: artifact.metadata.title,
-          bookId,
-          workDir,
-          chapters: artifact.metadata.chapters,
-        };
-        await writeExtractionCache({
-          sourcePath,
-          book: extracted,
-          writeJson: async (p, payload) => {
-            await workerCall("_write_file", {
-              path: p,
-              content: JSON.stringify(payload),
-            });
-          },
-        });
+      if (result.status !== "succeeded") {
+        throw new Error(
+          (result.error as any)?.message ?? "extract_book failed",
+        );
       }
+      const artifact = (
+        result.artifacts as unknown as Array<{
+          metadata: {
+            title: string;
+            chapters: { id: string; title: string; textLength: number; textPath: string }[];
+          };
+        }>
+      )[0];
+      const freshChapters = artifact.metadata.chapters;
+
+      // Merge: preserve existing script paths for previously analyzed chapters
+      const existingChapters = existingBook
+        ? await db.getChaptersWithScripts(bookId)
+        : [];
+      const existingScripts = new Map(existingChapters.map((c) => [c.id, c.scriptPath]));
+
+      for (const c of freshChapters) {
+        db.upsertChapter({
+          id: c.id,
+          bookId,
+          title: c.title,
+          status: existingScripts.has(c.id) ? "succeeded" : "pending",
+          scriptPath: existingScripts.get(c.id),
+        }).catch(() => {});
+      }
+
+      const extracted: BookState = {
+        title: artifact.metadata.title,
+        bookId,
+        workDir,
+        chapters: freshChapters,
+      };
+
+      await writeExtractionCache({
+        sourcePath,
+        book: extracted,
+        writeJson: async (p, payload) => {
+          await workerCall("_write_file", {
+            path: p,
+            content: JSON.stringify(payload),
+          });
+        },
+      });
 
       await db.createBook({
         id: bookId,
@@ -141,6 +112,9 @@ export function App() {
         workDir: extracted.workDir,
       });
 
+      if (existingBook) {
+        setImportError(`Re-extracted "${extracted.title}". Found ${freshChapters.length} chapters${existingChapters.length > 0 ? ` (${existingChapters.length} already analyzed).` : "."}`);
+      }
       navigateToBook(extracted);
     } catch (err) {
       setImportError(String(err));

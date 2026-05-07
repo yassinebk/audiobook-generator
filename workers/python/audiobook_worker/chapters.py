@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 
 CHAPTER_HEADING_RE = re.compile(
-    r"^(chapter\s+(?:\d+|[ivxlcdm]+))\b.*$",
+    r"^(?:chapter|part|book|section)\s+(?:\d+|[ivxlcdm]+)\b.*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
