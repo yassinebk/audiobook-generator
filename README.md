@@ -40,6 +40,15 @@ completed scripts are ready to generate.
 
 ---
 
+## Audio Sample
+
+A short clip from a generated chapter — *Pride and Prejudice*, Chapter 1, narrated with
+Kokoro TTS (MPS-accelerated, multi-voice):
+
+[pride-and-prejudice-ch1-sample.wav](docs/samples/pride-and-prejudice-ch1-sample.wav)
+
+---
+
 ## Features
 
 - **Import** EPUB and PDF books (text + OCR for scanned pages)
