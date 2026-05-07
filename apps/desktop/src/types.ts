@@ -69,14 +69,14 @@ export interface LibraryBook {
   importedAt: string | null;
 }
 
-export interface ChapterRecord {
+export interface ChapterRow {
   id: string;
   title: string;
   status: string;
   scriptPath: string | null;
 }
 
-export interface CharacterRecord {
+export interface CharacterRow {
   id: string;
   canonicalName: string;
   gender: string | null;

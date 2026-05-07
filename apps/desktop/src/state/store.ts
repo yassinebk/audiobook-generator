@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LibraryBook, CharacterRecord, ChapterRecord } from "../types";
+import type { LibraryBook, CharacterRow, ChapterRow } from "../types";
 
 export function createAudiobookStore() {
   return {
@@ -32,10 +32,10 @@ export function createAudiobookStore() {
         aliases: record.aliases ?? "[]",
       });
     },
-    async getCharacters(bookId: string): Promise<CharacterRecord[]> {
+    async getCharacters(bookId: string): Promise<CharacterRow[]> {
       return await invoke("db_get_characters", { bookId }) as any;
     },
-    async getChapters(bookId: string): Promise<ChapterRecord[]> {
+    async getChapters(bookId: string): Promise<ChapterRow[]> {
       return await invoke("db_get_chapters", { bookId }) as any;
     },
   };
