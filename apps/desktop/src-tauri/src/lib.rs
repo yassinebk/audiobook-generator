@@ -32,14 +32,21 @@ fn get_db() -> &'static Db {
                 gender TEXT, voice_id TEXT, confidence REAL DEFAULT 0.0,
                 aliases TEXT DEFAULT '[]', updated_at TEXT,
                 PRIMARY KEY (id, book_id)
-            );",
+            );
+            CREATE INDEX IF NOT EXISTS idx_books_source_path ON books(source_path);
+            CREATE INDEX IF NOT EXISTS idx_characters_book_id ON characters(book_id);
+            CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);",
         )
         .expect("failed to create tables");
-        for col in &["imported_at", "updated_at"] {
-            let _ = conn.execute(
-                &format!("ALTER TABLE books ADD COLUMN {} TEXT", col),
-                [],
-            );
+        // Add columns to existing databases that lack them
+        let has_imported_at = conn
+            .prepare("SELECT imported_at FROM books LIMIT 1")
+            .is_ok();
+        if !has_imported_at {
+            conn.execute("ALTER TABLE books ADD COLUMN imported_at TEXT", [])
+                .expect("failed to add imported_at column");
+            conn.execute("ALTER TABLE books ADD COLUMN updated_at TEXT", [])
+                .expect("failed to add updated_at column");
         }
         Db(Mutex::new(conn))
     })
@@ -168,8 +175,8 @@ fn db_get_characters(book_id: String) -> Result<Vec<serde_json::Value>, String> 
                 "canonicalName": row.get::<_, String>(1)?,
                 "gender": row.get::<_, Option<String>>(2)?,
                 "voiceId": row.get::<_, Option<String>>(3)?,
-                "confidence": row.get::<_, f64>(4)?,
-                "aliases": row.get::<_, String>(5)?
+                "confidence": row.get::<_, Option<f64>>(4)?,
+                "aliases": row.get::<_, Option<String>>(5)?
             }))
         })
         .map_err(|e| e.to_string())?;
