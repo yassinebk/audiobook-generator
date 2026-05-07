@@ -123,7 +123,7 @@ export function useBookImport(deps: UseBookImportDeps) {
         }
 
         const artifact = (
-          result.artifacts as Array<{
+          result.artifacts as unknown as Array<{
             metadata: { title: string; chapters: ChapterMeta[] };
           }>
         )[0];

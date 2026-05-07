@@ -5,10 +5,10 @@ describe("synthesizeChapter", () => {
   test("synthesizes a whole chapter in one worker call before assembling", async () => {
     const worker = vi.fn(async (command: string) => {
       if (command === "synthesize_chapter_audio") {
-        return { status: "succeeded", artifacts: [] };
+        return { status: "succeeded" as const, artifacts: [], warnings: [] };
       }
       if (command === "assemble_chapter_audio") {
-        return { status: "succeeded", artifacts: [] };
+        return { status: "succeeded" as const, artifacts: [], warnings: [] };
       }
       throw new Error(`unexpected command: ${command}`);
     });

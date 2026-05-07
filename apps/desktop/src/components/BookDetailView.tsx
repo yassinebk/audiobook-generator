@@ -223,7 +223,7 @@ export function BookDetailView({
         throw new Error(
           (result.error as any)?.message ?? "apply_corrections failed",
         );
-      const artifacts = result.artifacts as Array<{
+      const artifacts = result.artifacts as unknown as Array<{
         path: string;
         metadata: { chapterId: string };
       }>;

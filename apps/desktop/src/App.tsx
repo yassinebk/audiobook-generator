@@ -104,7 +104,7 @@ export function App() {
           );
         }
         const artifact = (
-          result.artifacts as Array<{
+          result.artifacts as unknown as Array<{
             metadata: {
               title: string;
               chapters: {
