@@ -223,7 +223,7 @@ export function BookDetailView({ libraryBook, book, onBack }: BookDetailViewProp
               <span className="chapter-title">{ch.title}</span>
             </label>
           ))}
-          <button className="btn-primary" onClick={() => { if (tab === "analyze") handleAnalyze(); else handleGenerate(); }} disabled={isBusy}>
+          <button className="btn-primary" onClick={() => { if (tab === "analyze") handleAnalyze(); else if (tab === "review") handleSaveCorrections(); else handleGenerate(); }} disabled={isBusy}>
             {tab === "analyze" ? "Analyze Selected" : tab === "review" ? "Save Corrections" : "Generate Selected"}
           </button>
         </aside>
