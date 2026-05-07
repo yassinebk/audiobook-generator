@@ -4,7 +4,7 @@ import hashlib
 import re
 
 from audiobook_worker.dialogue import segment_dialogue
-from audiobook_worker.llm import ChapterAnalysisRequest, MockLLMAnalyzer
+from audiobook_worker.llm import CharacterContext, ChapterAnalysisRequest, MockLLMAnalyzer
 
 
 VOICE_REGISTRY = {
@@ -233,15 +233,28 @@ def build_chapter_script(
     text: str,
     language: str,
     analyzer=None,
+    known_characters: list[dict] | None = None,
 ) -> dict:
     raw_segments = segment_dialogue(text)
     analyzer = analyzer or MockLLMAnalyzer()
+
+    # Convert known_characters dicts (from frontend/DB) to CharacterContext
+    ctx: list[CharacterContext] = []
+    for c in known_characters or []:
+        ctx.append(CharacterContext(
+            id=str(c.get("id", "")),
+            canonical_name=str(c.get("canonicalName", c.get("canonical_name", ""))),
+            aliases=[str(a) for a in c.get("aliases", [])],
+            gender=str(c.get("gender", "unknown")),
+        ))
+
     analysis = analyzer.analyze_chapter(
         ChapterAnalysisRequest(
             book_id=book_id,
             chapter_id=chapter_id,
             text=text,
             language=language,
+            known_characters=ctx,
         )
     )
     annotations = {

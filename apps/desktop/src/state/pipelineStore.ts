@@ -43,7 +43,9 @@ interface PipelineState {
   setChapterStatuses: (
     statuses: Record<string, string>,
   ) => void;
-  setProgressDetail: (details: ProgressDetail[]) => void;
+  setProgressDetail: (
+    details: ProgressDetail[] | ((prev: ProgressDetail[]) => ProgressDetail[]),
+  ) => void;
   setSelectedChapters: (
     chapters:
       | Set<string>
@@ -86,7 +88,11 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   setSavedMessage: (savedMessage) => set({ savedMessage }),
   setAnalyzeProgress: (analyzeProgress) => set({ analyzeProgress }),
   setChapterStatuses: (chapterStatuses) => set({ chapterStatuses }),
-  setProgressDetail: (progressDetail) => set({ progressDetail }),
+  setProgressDetail: (details) =>
+    set((s) => ({
+      progressDetail:
+        typeof details === "function" ? details(s.progressDetail) : details,
+    })),
   setSelectedChapters: (chapters) =>
     set((s) => ({
       selectedChapters:

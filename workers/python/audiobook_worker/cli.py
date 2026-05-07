@@ -222,6 +222,7 @@ def _analyze_chapter(request: dict[str, Any]) -> dict[str, Any]:
         text=chapter_text,
         language=request.get("language", "en"),
         analyzer=MockLLMAnalyzer() if request.get("mockLlm") else default_analyzer(),
+        known_characters=request.get("knownCharacters"),
     )
     script_path = output_directory / f"{request['chapterId']}.json"
     _write_json(script_path, script)

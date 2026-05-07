@@ -29,6 +29,7 @@ interface BookDetailViewProps {
   book: BookState;
   sourcePath: string;
   onBack: () => void;
+  onBookUpdate: (book: BookState) => void;
 }
 
 export function BookDetailView({
@@ -36,6 +37,7 @@ export function BookDetailView({
   book,
   sourcePath,
   onBack,
+  onBookUpdate,
 }: BookDetailViewProps) {
   const pipeline = usePipelineStore();
   const correctionState = useCorrectionStore();
@@ -51,6 +53,7 @@ export function BookDetailView({
 
   const { handleAnalyze } = useChapterAnalysis({
     book,
+    analysis: pipeline.analysis,
     selectedChapters: pipeline.selectedChapters,
     setStage: pipeline.setStage,
     setError: pipeline.setError,
@@ -61,6 +64,7 @@ export function BookDetailView({
     setProgress: pipeline.setProgress,
     setAnalysis: pipeline.setAnalysis,
     setCurrentStep: noopSetCurrentStep,
+    setTab: pipeline.setTab,
     abortRef,
     db,
   });
@@ -200,7 +204,22 @@ export function BookDetailView({
         }).catch(() => {});
       }
 
-      pipeline.setAnalyzeProgress(`Re-extracted: found ${freshChapters.length} chapters (${Object.keys(existingScripts).length} previously analyzed).`);
+      // Auto-select chapters that don't have scripts yet
+      const unanalyzed = freshChapters
+        .filter((c) => !existingScripts[c.id])
+        .map((c) => c.id);
+      pipeline.setSelectedChapters(new Set(unanalyzed));
+      pipeline.setTab("analyze");
+
+      // Update the book state in App so the sidebar re-renders with fresh chapters
+      onBookUpdate({ ...book, chapters: freshChapters });
+
+      const analyzedCount = Object.keys(existingScripts).length;
+      pipeline.setAnalyzeProgress(
+        `Found ${freshChapters.length} chapters` +
+        (analyzedCount > 0 ? ` · ${analyzedCount} already analyzed` : "") +
+        ` · ${unanalyzed.length} selected for analysis`,
+      );
       pipeline.setStage("idle");
     } catch (err) {
       pipeline.setError(String(err));
@@ -390,6 +409,21 @@ export function BookDetailView({
         <button className="btn-secondary" onClick={handleRegenerateAll}>
           Regen All
         </button>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            if (pipeline.tab === "analyze") handleAnalyze();
+            else if (pipeline.tab === "review") handleSaveCorrections();
+            else handleGenerate();
+          }}
+          disabled={isBusy || pipeline.selectedChapters.size === 0}
+        >
+          {pipeline.tab === "analyze"
+            ? `Analyze (${pipeline.selectedChapters.size})`
+            : pipeline.tab === "review"
+              ? "Save Corrections"
+              : `Generate (${pipeline.selectedChapters.size})`}
+        </button>
       </header>
 
       <div className="detail-body">
@@ -416,22 +450,6 @@ export function BookDetailView({
               <span className="chapter-title">{ch.title}</span>
             </label>
           ))}
-          <button
-            className="btn-primary"
-            onClick={() => {
-              if (pipeline.tab === "analyze") handleAnalyze();
-              else if (pipeline.tab === "review")
-                handleSaveCorrections();
-              else handleGenerate();
-            }}
-            disabled={isBusy}
-          >
-            {pipeline.tab === "analyze"
-              ? "Analyze Selected"
-              : pipeline.tab === "review"
-                ? "Save Corrections"
-                : "Generate Selected"}
-          </button>
         </aside>
 
         <section className="detail-content">
@@ -456,31 +474,101 @@ export function BookDetailView({
             </button>
           </nav>
 
-          {pipeline.tab === "analyze" && (
-            <div className="tab-panel">
-              {isBusy && (
-                <div className="progress-bar">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${pipeline.progress}%` }}
-                  />
-                </div>
-              )}
-              <p>{pipeline.analyzeProgress}</p>
-              {Object.entries(pipeline.chapterStatuses).map(
-                ([id, status]) => (
-                  <div key={id} className="chapter-status-row">
-                    {id}: {status}
+          {pipeline.tab === "analyze" && (() => {
+            const chapterMap = new Map(book.chapters.map((c) => [c.id, c]));
+            const statusEntries = Object.entries(pipeline.chapterStatuses);
+            const hasActivity = statusEntries.length > 0;
+            const characters = pipeline.analysis?.characters ?? [];
+
+            return (
+              <div className="tab-panel analyze-panel">
+                {/* Progress header — visible while busy */}
+                {isBusy && (
+                  <div className="analyze-progress-card">
+                    <div className="analyze-progress-bar-wrap">
+                      <div className="analyze-progress-track">
+                        <div className="analyze-progress-fill" style={{ width: `${pipeline.progress}%` }} />
+                      </div>
+                      <span className="analyze-progress-pct">{pipeline.progress}%</span>
+                    </div>
+                    {pipeline.analyzeProgress && (
+                      <div className="analyze-status-line">
+                        <span className="spinner" />
+                        <span>{pipeline.analyzeProgress}</span>
+                      </div>
+                    )}
+                    {pipeline.progressDetail.length > 0 && (
+                      <div className="analyze-detail-pills">
+                        {pipeline.progressDetail.map((d) => (
+                          <span key={d.label} className="analyze-detail-pill">
+                            <span className="analyze-detail-label">{d.label}</span>
+                            <span className="analyze-detail-value">{d.value}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <button className="btn-secondary analyze-stop-btn" onClick={handleStop}>
+                      Stop
+                    </button>
                   </div>
-                ),
-              )}
-              {isBusy && (
-                <button className="btn-secondary" onClick={handleStop}>
-                  Stop
-                </button>
-              )}
-            </div>
-          )}
+                )}
+
+                {/* Idle ready state */}
+                {!isBusy && !hasActivity && pipeline.selectedChapters.size > 0 && (
+                  <div className="analyze-ready-state">
+                    <span className="analyze-ready-icon">🔍</span>
+                    <p>{pipeline.selectedChapters.size} chapter{pipeline.selectedChapters.size !== 1 ? "s" : ""} selected</p>
+                    <span className="analyze-ready-hint">Press Analyze to extract characters and build scripts.</span>
+                  </div>
+                )}
+
+                {/* Post-run status: message only */}
+                {!isBusy && pipeline.analyzeProgress && (
+                  <p className="analyze-done-message">{pipeline.analyzeProgress}</p>
+                )}
+
+                {/* Per-chapter status rows */}
+                {hasActivity && (
+                  <div className="analyze-chapter-list">
+                    {statusEntries.map(([id, status]) => {
+                      const ch = chapterMap.get(id);
+                      const isRunning = status === "analyzing";
+                      const isDone = status === "done";
+                      const isFailed = status === "failed";
+                      return (
+                        <div key={id} className={`analyze-chapter-row ${isRunning ? "is-running" : isDone ? "is-done" : isFailed ? "is-failed" : ""}`}>
+                          <span className="chapter-status-dot cs-pending" style={
+                            isRunning ? { background: "var(--accent)" } :
+                            isDone    ? { background: "var(--success)" } :
+                            isFailed  ? { background: "var(--danger)" } :
+                            undefined
+                          } />
+                          <span className="analyze-chapter-name">{ch?.title ?? id}</span>
+                          <span className={`status-chip ${isRunning ? "chip-running" : isDone ? "chip-done" : isFailed ? "chip-fail" : ""}`}>
+                            {isRunning ? <><span className="spinner" /> Analyzing</> : isDone ? "Done" : isFailed ? "Failed" : status}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Characters found preview */}
+                {characters.length > 0 && (
+                  <div className="analyze-characters-preview">
+                    <p className="analyze-section-label">{characters.length} character{characters.length !== 1 ? "s" : ""} found</p>
+                    <div className="analyze-char-chips">
+                      {characters.map((c) => (
+                        <span key={c.id} className="character-chip analyze-char-chip">
+                          {c.canonicalName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {pipeline.tab === "review" && pipeline.analysis && (
             <div className="tab-panel">
@@ -496,7 +584,7 @@ export function BookDetailView({
                 <tbody>
                   {pipeline.analysis.characters.map((c) => (
                     <tr key={c.id}>
-                      <td>{c.canonicalName}</td>
+                      <td style={{ fontWeight: 500 }}>{c.canonicalName}</td>
                       <td>
                         <select
                           value={c.gender}
@@ -526,6 +614,7 @@ export function BookDetailView({
                       <td>
                         <button
                           onClick={() => handlePreviewVoice(c.voiceId)}
+                          title="Preview voice"
                         >
                           ▶
                         </button>
@@ -534,18 +623,21 @@ export function BookDetailView({
                   ))}
                 </tbody>
               </table>
-              <button
-                className="btn-primary"
-                onClick={handleSaveCorrections}
-                disabled={!correctionState.dirty}
-              >
-                Save Corrections
-              </button>
-              {pipeline.savedMessage && (
-                <p className="success-text">
-                  {pipeline.savedMessage}
-                </p>
-              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  className="btn-primary"
+                  style={{ width: "auto", padding: "8px 16px" }}
+                  onClick={handleSaveCorrections}
+                  disabled={!correctionState.dirty}
+                >
+                  Save Corrections
+                </button>
+                {pipeline.savedMessage && (
+                  <span className="success-text" style={{ margin: 0 }}>
+                    {pipeline.savedMessage}
+                  </span>
+                )}
+              </div>
             </div>
           )}
 
@@ -559,14 +651,18 @@ export function BookDetailView({
                   />
                 </div>
               )}
-              <p>{pipeline.analyzeProgress}</p>
+              {pipeline.analyzeProgress && (
+                <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>
+                  {pipeline.analyzeProgress}
+                </p>
+              )}
               {pipeline.progressDetail.map((d) => (
                 <div key={d.label} className="progress-detail-row">
-                  {d.label}: {d.value}
+                  <span style={{ color: "var(--text-muted)" }}>{d.label}:</span> {d.value}
                 </div>
               ))}
               {isBusy && (
-                <button className="btn-secondary" onClick={handleStop}>
+                <button className="btn-secondary" style={{ width: "auto", alignSelf: "flex-start" }} onClick={handleStop}>
                   Stop
                 </button>
               )}
@@ -598,7 +694,7 @@ export function BookDetailView({
 
       {pipeline.error && (
         <div className="error-banner">
-          {pipeline.error}
+          <span>{pipeline.error}</span>
           <button
             onClick={() => {
               pipeline.setError(null);
@@ -613,11 +709,13 @@ export function BookDetailView({
       <footer
         className="character-strip"
         onClick={() => pipeline.setTab("review")}
+        title="Click to review characters"
       >
-        Characters:{" "}
-        {pipeline.analysis
-          ? `${pipeline.analysis.characters.length} detected`
-          : "None analyzed yet"}
+        <span style={{ flexShrink: 0 }}>
+          {pipeline.analysis
+            ? `${pipeline.analysis.characters.length} characters`
+            : "No characters yet"}
+        </span>
         {pipeline.analysis &&
           pipeline.analysis.characters.slice(0, 5).map((c) => (
             <span key={c.id} className="character-chip">
@@ -626,7 +724,7 @@ export function BookDetailView({
           ))}
         {pipeline.analysis &&
           pipeline.analysis.characters.length > 5 && (
-            <span>
+            <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
               +{pipeline.analysis.characters.length - 5} more
             </span>
           )}

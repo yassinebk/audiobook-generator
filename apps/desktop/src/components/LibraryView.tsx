@@ -14,13 +14,19 @@ function chapterProgressText(book: LibraryBook, chapters: Map<string, { total: n
   const info = chapters.get(book.id);
   if (!info) return "—";
   if (info.generated === 0) return `${info.total} chapters`;
-  return `${info.generated}/${info.total} generated`;
+  return `${info.generated} / ${info.total} generated`;
 }
 
 function progressPercent(book: LibraryBook, chapters: Map<string, { total: number; generated: number }>): number {
   const info = chapters.get(book.id);
   if (!info || info.total === 0) return 0;
   return Math.round((info.generated / info.total) * 100);
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 export function LibraryView({ onImport, onSelectBook, importError }: LibraryViewProps) {
@@ -51,10 +57,14 @@ export function LibraryView({ onImport, onSelectBook, importError }: LibraryView
   if (books.length === 0) {
     return (
       <main className="library-view">
+        <header className="library-topbar">
+          <span className="library-wordmark">Audiobook Studio</span>
+        </header>
         <div className="library-empty">
+          <div className="empty-icon">📚</div>
           <h2>No books yet</h2>
-          <p>Import your first book to get started.</p>
-          <button className="btn-primary" onClick={onImport}>
+          <p>Import your first EPUB to get started.</p>
+          <button className="btn-primary library-import-btn" onClick={onImport}>
             + Import Book
           </button>
           {importError && <p className="error-text">{importError}</p>}
@@ -65,13 +75,20 @@ export function LibraryView({ onImport, onSelectBook, importError }: LibraryView
 
   return (
     <main className="library-view">
-      <header className="library-header">
-        <h1>Library</h1>
-        <button className="btn-primary" onClick={onImport}>
+      <header className="library-topbar">
+        <span className="library-wordmark">Audiobook Studio</span>
+        <button className="btn-primary" style={{ width: "auto", padding: "8px 16px", fontSize: "12px" }} onClick={onImport}>
           + Import
         </button>
       </header>
-      {importError && <p className="error-text">{importError}</p>}
+
+      {importError && <p className="error-text" style={{ margin: "12px 28px 0" }}>{importError}</p>}
+
+      <div className="library-header">
+        <h1>Library</h1>
+        <span className="chapter-count-badge">{books.length} book{books.length !== 1 ? "s" : ""}</span>
+      </div>
+
       <div className="library-grid">
         {books.map((book) => {
           const pct = progressPercent(book, chapterInfo);
@@ -81,17 +98,19 @@ export function LibraryView({ onImport, onSelectBook, importError }: LibraryView
               className="library-card"
               onClick={() => onSelectBook(book)}
             >
-              <div className="card-cover">📖</div>
-              <div className="card-title">{book.title}</div>
-              <div className="card-progress">
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${pct}%` }} />
+              <div className="card-cover-area">📖</div>
+              <div className="card-body">
+                <div className="card-title">{book.title}</div>
+                <div className="card-progress">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="progress-text">
+                    {chapterProgressText(book, chapterInfo)}
+                  </span>
                 </div>
-                <span className="progress-text">
-                  {chapterProgressText(book, chapterInfo)}
-                </span>
+                <div className="card-date">{formatDate(book.importedAt)}</div>
               </div>
-              <div className="card-date">{book.importedAt?.split("T")[0] ?? ""}</div>
             </button>
           );
         })}

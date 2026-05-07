@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -13,11 +14,21 @@ from audiobook_worker.dialogue import segment_dialogue
 
 
 @dataclass(frozen=True)
+class CharacterContext:
+    """A character already identified in a previous chapter, passed for consistency."""
+    id: str
+    canonical_name: str
+    aliases: list[str]
+    gender: str
+
+
+@dataclass(frozen=True)
 class ChapterAnalysisRequest:
     book_id: str
     chapter_id: str
     text: str
     language: str
+    known_characters: list[CharacterContext] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -52,10 +63,41 @@ class OpenAICompatibleConfig:
     base_url: str
     model: str
     max_tokens: int | None = None
-    timeout_seconds: float = 60.0
+    timeout_seconds: float = 120.0
+    max_retries: int = 3
 
 
 Transport = Callable[[str, dict[str, str], dict[str, Any], float], dict[str, Any]]
+
+_SYSTEM_PROMPT = """\
+You are an audiobook script analyst. Your job is to analyse a book chapter and produce a \
+structured JSON identifying speaking characters and annotating each dialogue segment.
+
+## Rules for characters
+- Use a stable snake_case `id` derived from the character's most common name \
+  (e.g. "elizabeth_bennet", "mr_darcy"). NEVER change an id between chapters.
+- `canonicalName` is the full display name used in the book (e.g. "Elizabeth Bennet").
+- List all known shorter forms, nicknames, and titles in `aliases` \
+  (e.g. ["Lizzy", "Miss Bennet", "Eliza"]).
+- `gender`: "female" | "male" | "neutral" | "unknown". Infer from pronouns and context.
+- `ageClass`: "child" | "young" | "adult" | "older" | "unknown".
+- `confidence`: 0.0–1.0, reflect how sure you are the character is correctly identified.
+- If a character already appears in `knownCharacters`, reuse their exact `id` and \
+  `canonicalName`. Do NOT create a new entry for the same person.
+
+## Rules for segmentAnnotations
+- Annotate every segment in the input, including narration (speakerId = "narrator").
+- For dialogue with a known speaker, use their `id` from the characters list.
+- For dialogue with no identifiable speaker, use speakerId = "unknown".
+- `emotion`: "neutral" | "happy" | "sad" | "angry" | "afraid" | "tense" | \
+  "whispering" | "excited" | "tired". Choose the most contextually appropriate.
+- `confidence`: how sure you are about the speaker attribution (0.0–1.0).
+- Only add `warnings` for genuine ambiguity (e.g. ["speaker_ambiguous"]).
+
+## Output format
+Return a single JSON object with exactly two keys: `characters` and `segmentAnnotations`. \
+No markdown, no extra commentary — only the JSON object.
+"""
 
 
 class MockLLMAnalyzer:
@@ -65,6 +107,18 @@ class MockLLMAnalyzer:
     def analyze_chapter(self, request: ChapterAnalysisRequest) -> ChapterAnalysisResult:
         segments = segment_dialogue(request.text)
         characters: dict[str, CharacterAnalysis] = {}
+
+        # Seed with known characters so mock doesn't duplicate them
+        for kc in request.known_characters:
+            characters[kc.id] = CharacterAnalysis(
+                id=kc.id,
+                canonical_name=kc.canonical_name,
+                aliases=kc.aliases,
+                gender=kc.gender,
+                age_class="adult",
+                confidence=0.78,
+            )
+
         annotations: list[SegmentAnnotation] = []
 
         for index, segment in enumerate(segments):
@@ -73,7 +127,12 @@ class MockLLMAnalyzer:
 
             speaker = segment.speaker_hint or "unknown"
             speaker_id = _speaker_id(speaker)
-            if speaker != "unknown" and speaker_id not in characters:
+
+            # Check if known character matches (by name/alias)
+            resolved_id = _resolve_known_character(speaker, request.known_characters)
+            if resolved_id:
+                speaker_id = resolved_id
+            elif speaker != "unknown" and speaker_id not in characters:
                 characters[speaker_id] = CharacterAnalysis(
                     id=speaker_id,
                     canonical_name=speaker,
@@ -132,34 +191,39 @@ class OpenAICompatibleAnalyzer:
         payload = {
             "model": self.config.model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You convert book chapters into audiobook analysis JSON. "
-                        "Return only valid JSON with keys characters and segmentAnnotations."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": _analysis_prompt(request),
-                },
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": _analysis_prompt(request)},
             ],
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
         }
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
-        response = self._transport(
-            url,
-            {
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json",
-            },
-            payload,
-            self.config.timeout_seconds,
-        )
-        content = response["choices"][0]["message"]["content"]
-        return _parse_analysis_json(json.loads(content))
+
+        last_error: Exception | None = None
+        for attempt in range(self.config.max_retries):
+            try:
+                response = self._transport(
+                    url,
+                    {
+                        "Authorization": f"Bearer {self.config.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    payload,
+                    self.config.timeout_seconds,
+                )
+                content = response["choices"][0]["message"]["content"]
+                return _parse_analysis_json(json.loads(content))
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.config.max_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s
+                    time.sleep(2 ** attempt)
+                    continue
+
+        raise RuntimeError(
+            f"LLM analysis failed after {self.config.max_retries} attempts: {last_error}"
+        ) from last_error
 
 
 def default_analyzer():
@@ -221,7 +285,7 @@ def resolve_model_from_config(config: dict[str, Any], model_arg: str | None = No
                     return _resolved_model(candidate_provider, candidate_config, model, lookup)
             prefix = f"{candidate_provider}/"
             if lookup.startswith(prefix):
-                stripped = lookup[len(prefix) :]
+                stripped = lookup[len(prefix):]
                 for model in candidate_config.get("models", []):
                     if model.get("id") == stripped:
                         return _resolved_model(candidate_provider, candidate_config, model, stripped)
@@ -315,6 +379,17 @@ def _speaker_id(name: str) -> str:
     return normalized or "unknown"
 
 
+def _resolve_known_character(name: str, known: list[CharacterContext]) -> str | None:
+    """Return the id of a known character whose canonical name or alias matches."""
+    name_lower = name.lower().strip()
+    for kc in known:
+        if kc.canonical_name.lower() == name_lower:
+            return kc.id
+        if any(alias.lower() == name_lower for alias in kc.aliases):
+            return kc.id
+    return None
+
+
 def _analysis_prompt(request: ChapterAnalysisRequest) -> str:
     segments = segment_dialogue(request.text)
     segment_lines = [
@@ -327,36 +402,25 @@ def _analysis_prompt(request: ChapterAnalysisRequest) -> str:
         }
         for index, segment in enumerate(segments)
     ]
-    return json.dumps(
-        {
-            "bookId": request.book_id,
-            "chapterId": request.chapter_id,
-            "language": request.language,
-            "segments": segment_lines,
-            "schema": {
-                "characters": [
-                    {
-                        "id": "snake_case_id",
-                        "canonicalName": "display name",
-                        "aliases": ["alias"],
-                        "gender": "female|male|neutral|unknown",
-                        "ageClass": "child|young|adult|older|unknown",
-                        "confidence": 0.0,
-                    }
-                ],
-                "segmentAnnotations": [
-                    {
-                        "segmentIndex": 0,
-                        "speakerId": "character_id|unknown|narrator",
-                        "emotion": "neutral|happy|sad|angry|afraid|tense|whispering|excited|tired",
-                        "confidence": 0.0,
-                        "warnings": ["optional_warning"],
-                    }
-                ],
-            },
-        },
-        ensure_ascii=False,
-    )
+
+    payload: dict[str, Any] = {
+        "chapterId": request.chapter_id,
+        "language": request.language,
+        "segments": segment_lines,
+    }
+
+    if request.known_characters:
+        payload["knownCharacters"] = [
+            {
+                "id": kc.id,
+                "canonicalName": kc.canonical_name,
+                "aliases": kc.aliases,
+                "gender": kc.gender,
+            }
+            for kc in request.known_characters
+        ]
+
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _parse_analysis_json(payload: dict[str, Any]) -> ChapterAnalysisResult:
@@ -397,7 +461,7 @@ def _post_json(
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"DeepSeek request failed with HTTP {error.code}: {detail}") from error
+        raise RuntimeError(f"LLM request failed with HTTP {error.code}: {detail}") from error
 
 
 def _guess_gender(name: str) -> str:
@@ -410,10 +474,14 @@ def _guess_gender(name: str) -> str:
 
 def _guess_emotion(text: str) -> str:
     lowered = text.lower()
+    if any(word in lowered for word in ["whispered", "murmured", "breathed"]):
+        return "whispering"
+    if any(word in lowered for word in ["afraid", "scared", "terrified", "fear"]):
+        return "afraid"
+    if any(word in lowered for word in ["sobbed", "cried", "wept", "tearfully"]):
+        return "sad"
+    if any(word in lowered for word in ["shouted", "cried out", "exclaimed", "snapped"]):
+        return "angry"
     if "!" in text:
         return "excited"
-    if "?" in text:
-        return "neutral"
-    if any(word in lowered for word in ["afraid", "scared", "terrified"]):
-        return "afraid"
     return "neutral"

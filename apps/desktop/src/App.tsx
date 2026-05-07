@@ -172,6 +172,7 @@ export function App() {
         book={activeBook}
         sourcePath={activeSourcePath}
         onBack={navigateToLibrary}
+        onBookUpdate={(b) => navigateToBook(b, activeSourcePath)}
       />
     );
   }
